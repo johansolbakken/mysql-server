@@ -55,6 +55,7 @@
 #include "sql/item_cmpfunc.h"
 #include "sql/item_subselect.h"
 #include "sql/item_sum.h"
+#include "sql/iterators/hash_join_iterator.h"
 #include "sql/iterators/row_iterator.h"
 #include "sql/join_optimizer/access_path.h"
 #include "sql/join_optimizer/bit_utils.h"
@@ -575,6 +576,7 @@ static unique_ptr<Json_object> ExplainMaterializeAccessPath(
 
   error |= AddMemberToObject<Json_string>(obj, "operation", str);
 
+
   /* Move the Materialize to the bottom of its table path, and return a new
    * object for this table path.
    */
@@ -1089,6 +1091,15 @@ static bool AddPathCosts(const AccessPath *path,
     int num_init_calls = 0;
 
     if (path->iterator != nullptr) {
+
+      // :nocheckin - Here we set "actual" values
+      if (path->type == AccessPath::HASH_JOIN) {
+        const auto *iterator = dynamic_cast<const HashJoinIterator*>(path->iterator->real_iterator());
+        error |= AddMemberToObject<Json_boolean>(
+            obj, "went_on_disk",
+            iterator->WentOnDisk());
+      }
+
       const IteratorProfiler *const profiler = path->iterator->GetProfiler();
       if ((num_init_calls = profiler->GetNumInitCalls()) != 0) {
         error |= AddMemberToObject<Json_double>(
@@ -2440,7 +2451,27 @@ void Explain_format_tree::ExplainPrintCosts(const Json_object *obj,
       *explain += stream.str();
     }
   }
+
+  ExplainPrintWentOnDisk(obj, explain);
+
   *explain += "\n";
+}
+
+// :nocheckin - This is where we print
+void Explain_format_tree::ExplainPrintWentOnDisk(const Json_object *obj,
+                                                 string *explain) {
+  std::stringstream ss;
+
+  auto access_type = down_cast<const Json_string *>(obj->get("access_type"))->value();
+  if (access_type == "join") {
+    auto join_algorithm = down_cast<const Json_string *>(obj->get("join_algorithm"))->value();
+    if (join_algorithm == "hash") {
+      auto went_on_disk = down_cast<const Json_boolean *>(obj->get("went_on_disk"))->value();
+      ss << "  (went_on_disk=" << went_on_disk << ")";
+    }
+  }
+
+  *explain += ss.str();
 }
 
 /*
