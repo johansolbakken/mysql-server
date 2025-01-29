@@ -1098,6 +1098,10 @@ static bool AddPathCosts(const AccessPath *path,
         error |= AddMemberToObject<Json_boolean>(
             obj, "went_on_disk",
             iterator->WentOnDisk());
+
+        error |= AddMemberToObject<Json_boolean>(
+            obj, "was_in_memory",
+            iterator->WasInMemory());
       }
 
       const IteratorProfiler *const profiler = path->iterator->GetProfiler();
@@ -2461,13 +2465,19 @@ void Explain_format_tree::ExplainPrintCosts(const Json_object *obj,
 void Explain_format_tree::ExplainPrintWentOnDisk(const Json_object *obj,
                                                  string *explain) {
   std::stringstream ss;
+  ss << std::boolalpha;
 
   auto access_type = down_cast<const Json_string *>(obj->get("access_type"))->value();
   if (access_type == "join") {
     auto join_algorithm = down_cast<const Json_string *>(obj->get("join_algorithm"))->value();
     if (join_algorithm == "hash") {
       auto went_on_disk = down_cast<const Json_boolean *>(obj->get("went_on_disk"))->value();
-      ss << "  (went_on_disk=" << went_on_disk << ")";
+      auto was_in_memory = down_cast<const Json_boolean *>(obj->get("was_in_memory"))->value();
+      ss << "  (went_on_disk=" << went_on_disk << ", was_in_memory=" << was_in_memory;
+      if (!went_on_disk && !was_in_memory) {
+        ss << ", in-memory-with-refill!";
+      }
+      ss << ")";
     }
   }
 
