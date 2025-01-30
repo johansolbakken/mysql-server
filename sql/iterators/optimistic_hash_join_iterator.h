@@ -8,19 +8,15 @@
 #include <vector>
 
 #include "my_alloc.h"
-#include "my_base.h"
 #include "my_table_map.h"
 #include "prealloced_array.h"
-#include "sql/immutable_string.h"
 #include "sql/item_cmpfunc.h"
 #include "sql/iterators/hash_join_buffer.h"
-#include "sql/iterators/hash_join_chunk.h"
 #include "sql/iterators/row_iterator.h"
 #include "sql/join_type.h"
 #include "sql/mem_root_array.h"
-#include "sql/pack_rows.h"
 #include "sql/table.h"
-#include "sql_string.h"
+#include "sql/iterators/hash_join_iterator.h"
 
 class Item;
 class THD;
