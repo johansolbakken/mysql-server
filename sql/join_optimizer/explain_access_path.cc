@@ -2455,9 +2455,10 @@ void Explain_format_tree::ExplainPrintCosts(const Json_object *obj,
 
       *explain += stream.str();
     }
-  }
 
-  ExplainPrintWentOnDisk(obj, explain);
+    // Output extra information about hash join
+    ExplainPrintWentOnDisk(obj, explain);
+  }
 
   *explain += "\n";
 }

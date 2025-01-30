@@ -740,11 +740,11 @@ struct AccessPath {
     return u.zero_rows_aggregated;
   }
   auto &hash_join() {
-    assert(type == HASH_JOIN);
+    assert(type == HASH_JOIN || type == OPTIMISTIC_HASH_JOIN);
     return u.hash_join;
   }
   const auto &hash_join() const {
-    assert(type == HASH_JOIN);
+    assert(type == HASH_JOIN || type == OPTIMISTIC_HASH_JOIN);
     return u.hash_join;
   }
   auto &bka_join() {
