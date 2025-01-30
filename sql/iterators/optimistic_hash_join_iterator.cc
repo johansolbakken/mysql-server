@@ -12,7 +12,7 @@ OptimisticHashJoinIterator::OptimisticHashJoinIterator(THD *thd, unique_ptr_dest
                          const Mem_root_array<Item *> &extra_conditions,
                          std::span<AccessPath *> single_row_index_lookups,
                          HashJoinInput first_input, bool probe_input_batch_mode,
-                         uint64_t *hash_table_generation) {
+                         uint64_t *hash_table_generation) : RowIterator(thd) {
 
 }
 
