@@ -11741,6 +11741,7 @@ double EstimateRowAccesses(const AccessPath *path, double num_evaluations,
             rows += EstimateRowAccesses(param.inner, num_evaluations, kNoLimit);
             return true;
           }
+          case AccessPath::OPTIMISTIC_HASH_JOIN:
           case AccessPath::HASH_JOIN: {
             // Hash join reads each side once. If there is a LIMIT clause, it
             // might not need to read all rows from the outer table.

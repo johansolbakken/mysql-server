@@ -273,6 +273,7 @@ struct AccessPath {
     NESTED_LOOP_SEMIJOIN_WITH_DUPLICATE_REMOVAL,
     BKA_JOIN,
     HASH_JOIN,
+    OPTIMISTIC_HASH_JOIN, // :nocheckin - Added the enum?
 
     // Composite access paths.
     FILTER,

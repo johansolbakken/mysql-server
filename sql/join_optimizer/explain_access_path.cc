@@ -1093,7 +1093,7 @@ static bool AddPathCosts(const AccessPath *path,
     if (path->iterator != nullptr) {
 
       // :nocheckin - Here we set "actual" values
-      if (path->type == AccessPath::HASH_JOIN) {
+      if (path->type == AccessPath::HASH_JOIN || path->type == AccessPath::OPTIMISTIC_HASH_JOIN) {
         const auto *iterator = dynamic_cast<const HashJoinIterator*>(path->iterator->real_iterator());
         error |= AddMemberToObject<Json_boolean>(
             obj, "went_on_disk",
@@ -1545,6 +1545,7 @@ static unique_ptr<Json_object> SetObjectMembers(
       children->push_back({path->bka_join().inner});
       break;
     }
+    case AccessPath::OPTIMISTIC_HASH_JOIN:
     case AccessPath::HASH_JOIN: {
       const JoinPredicate *predicate = path->hash_join().join_predicate;
       RelationalExpression::Type type = path->hash_join().rewrite_semi_to_inner

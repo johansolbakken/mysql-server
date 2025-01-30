@@ -152,6 +152,7 @@ void ForEachChild(AccessPathPtr path, JoinPtr join,
       func(path->bka_join().outer, join);
       func(path->bka_join().inner, join);
       break;
+    case AccessPath::OPTIMISTIC_HASH_JOIN:
     case AccessPath::HASH_JOIN:
       func(path->hash_join().inner, join);
       func(path->hash_join().outer, join);
@@ -321,6 +322,7 @@ void WalkTablesUnderAccessPath(AccessPath *root_path, Func &&func,
           case AccessPath::FAKE_SINGLE_ROW:
           case AccessPath::FILTER:
           case AccessPath::HASH_JOIN:
+          case AccessPath::OPTIMISTIC_HASH_JOIN:
           case AccessPath::LIMIT_OFFSET:
           case AccessPath::MATERIALIZE:
           case AccessPath::MATERIALIZE_INFORMATION_SCHEMA_TABLE:

@@ -760,6 +760,7 @@ Item *AddCachesAroundConstantConditions(Item *item) {
       path->filter().condition =
           AddCachesAroundConstantConditions(path->filter().condition);
       return path->filter().condition == nullptr;
+    case AccessPath::OPTIMISTIC_HASH_JOIN:
     case AccessPath::HASH_JOIN:
       for (Item *&item :
            path->hash_join().join_predicate->expr->join_conditions) {
@@ -786,7 +787,8 @@ void FinalizeUpdateOrDelete(AccessPath *root_path, table_map target_tables) {
       WalkAccessPathPolicy::STOP_AT_MATERIALIZATION,
       [target_tables](AccessPath *path, const JOIN *) {
         if ((path->type == AccessPath::SORT ||
-             path->type == AccessPath::HASH_JOIN) &&
+             path->type == AccessPath::HASH_JOIN ||
+             path->type == AccessPath::OPTIMISTIC_HASH_JOIN) &&
             Overlaps(target_tables,
                      GetUsedTableMap(path, /*include_pruned_tables=*/true))) {
           FindTablesToGetRowidFor(path);

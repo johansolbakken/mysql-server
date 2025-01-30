@@ -908,6 +908,7 @@ unique_ptr_destroy_only<RowIterator> CreateIteratorFromAccessPath(
             CollectSingleRowIndexLookups(thd, path), param.join_type);
         break;
       }
+      case AccessPath::OPTIMISTIC_HASH_JOIN:
       case AccessPath::HASH_JOIN: {
         const auto &param = path->hash_join();
         if (job.children.is_null()) {
@@ -997,6 +998,7 @@ unique_ptr_destroy_only<RowIterator> CreateIteratorFromAccessPath(
                 ? HashJoinInput::kProbe
                 : HashJoinInput::kBuild;
 
+        // :nocheckin - TODO(johan): do a if HASH_JOIN, if OPTIMISTIC_HASH_JOIN create our own iterator
         iterator = NewIterator<HashJoinIterator>(
             thd, mem_root, std::move(job.children[1]),
             GetUsedTables(param.inner, /*include_pruned_tables=*/true),
@@ -1392,6 +1394,7 @@ void FindTablesToGetRowidFor(AccessPath *path) {
                                           AccessPath *subpath, const JOIN *) {
     if (path == subpath) return false;  // Skip ourselves.
     switch (subpath->type) {
+      case AccessPath::OPTIMISTIC_HASH_JOIN:
       case AccessPath::HASH_JOIN:
         handled_by_others |=
             GetUsedTableMap(subpath, /*include_pruned_tables=*/true);
@@ -1430,6 +1433,7 @@ void FindTablesToGetRowidFor(AccessPath *path) {
   // We stop at MATERIALIZE and STREAM (they supply row IDs for us without
   // having to ask the tables below).
   switch (path->type) {
+    case AccessPath::OPTIMISTIC_HASH_JOIN:
     case AccessPath::HASH_JOIN:
       WalkAccessPaths(path, /*join=*/nullptr,
                       WalkAccessPathPolicy::STOP_AT_MATERIALIZATION,
@@ -1623,7 +1627,7 @@ void ExpandSingleFilterAccessPath(THD *thd, AccessPath *path, const JOIN *join,
   // t2.b=t3.b edge, that predicate will be in filtered_predicates. In this
   // case, it is desirable to have t1.a=t3.a AND t2.b=t3.b as the hash join
   // predicate, and remove t2.b=t3.b from the filter predicates.
-  if (path->type == AccessPath::HASH_JOIN &&
+  if ((path->type == AccessPath::HASH_JOIN || path->type == AccessPath::OPTIMISTIC_HASH_JOIN) &&
       path->hash_join().join_predicate->expr->join_predicate_first !=
           path->hash_join().join_predicate->expr->join_predicate_last) {
     MoveFilterPredicatesIntoHashJoinCondition(thd, path, predicates,
@@ -1684,7 +1688,7 @@ table_map GetHashJoinTables(AccessPath *path) {
   WalkAccessPaths(
       path, /*join=*/nullptr, WalkAccessPathPolicy::STOP_AT_MATERIALIZATION,
       [&tables](AccessPath *subpath, const JOIN *) {
-        if (subpath->type == AccessPath::HASH_JOIN) {
+        if (subpath->type == AccessPath::HASH_JOIN || subpath->type == AccessPath::OPTIMISTIC_HASH_JOIN) {
           tables |= GetUsedTableMap(subpath, /*include_pruned_tables=*/true);
           return true;
         }

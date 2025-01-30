@@ -5002,6 +5002,8 @@ void CostingReceiver::ProposeHashJoin(
                                         &right_path);
   }
 
+  // :nocheckin - TODO: PROPOSE OPTIMISTIC_HASH_JOIN
+
   AccessPath join_path;
   join_path.type = AccessPath::HASH_JOIN;
   join_path.parameter_tables =
@@ -6154,6 +6156,10 @@ string PrintAccessPath(const AccessPath &path, const JoinHypergraph &graph,
       str += "HASH_JOIN";
       PrintJoinOrder(&path, &join_order);
       break;
+    case AccessPath::OPTIMISTIC_HASH_JOIN:
+      str += "OPTIMISTIC_HASH_JOIN";
+      PrintJoinOrder(&path, &join_order);
+      break;
     case AccessPath::FILTER:
       str += "FILTER";
       break;
@@ -6280,6 +6286,7 @@ void PrintJoinOrder(const AccessPath *path, string *join_order) {
         outer = subpath->nested_loop_join().outer;
         inner = subpath->nested_loop_join().inner;
         break;
+      case AccessPath::OPTIMISTIC_HASH_JOIN:
       case AccessPath::HASH_JOIN:
         outer = subpath->hash_join().outer;
         inner = subpath->hash_join().inner;
