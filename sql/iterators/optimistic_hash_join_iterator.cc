@@ -13,7 +13,7 @@ OptimisticHashJoinIterator::OptimisticHashJoinIterator(THD *thd, unique_ptr_dest
                          std::span<AccessPath *> single_row_index_lookups,
                          HashJoinInput first_input, bool probe_input_batch_mode,
                          uint64_t *hash_table_generation) : RowIterator(thd) {
-
+  assert(false && "not implemented");
 }
 
 
