@@ -1086,6 +1086,10 @@ static bool AddPathCosts(const AccessPath *path,
                                            : path->num_output_rows());
   } /* if (path->num_output_rows() >= 0.0) */
 
+  error |= AddMemberToObject<Json_boolean>(
+            obj, "was_optimistic_hash_join",
+            path->type == AccessPath::OPTIMISTIC_HASH_JOIN);
+
   /* Add analyze figures */
   if (explain_analyze) {
     int num_init_calls = 0;
@@ -2408,6 +2412,8 @@ void Explain_format_tree::ExplainPrintTreeNode(const Json_dom *json, int level,
 
 void Explain_format_tree::ExplainPrintCosts(const Json_object *obj,
                                             string *explain) {
+  ExplainPrintOptimisticHashJoin(obj, explain);
+
   bool has_first_cost = obj->get("estimated_first_row_cost") != nullptr;
   bool has_cost = obj->get("estimated_total_cost") != nullptr;
 
@@ -2481,6 +2487,21 @@ void Explain_format_tree::ExplainPrintWentOnDisk(const Json_object *obj,
       }
       ss << ")";
     }
+  }
+
+  *explain += ss.str();
+}
+
+
+void Explain_format_tree::ExplainPrintOptimisticHashJoin(const Json_object *obj,
+                                                         std::string* explain) {
+  std::stringstream ss;
+  ss << std::boolalpha;
+
+  auto was_optimistic_hash_join = down_cast<const Json_boolean *>(obj->get("was_optimistic_hash_join"))->value();
+
+  if (was_optimistic_hash_join) {
+    ss << "  (optimistic hash join!)";
   }
 
   *explain += ss.str();

@@ -111,6 +111,7 @@ class Explain_format_tree : public Explain_format {
                       std::string *child_token_digest);
   void ExplainPrintCosts(const Json_object *obj, std::string *explain);
   void ExplainPrintWentOnDisk(const Json_object *obj, std::string *explain);
+  void ExplainPrintOptimisticHashJoin(const Json_object *obj, std::string* explain);
 };
 
 #endif  // OPT_EXPLAIN_FORMAT_TRADITIONAL_INCLUDED
