@@ -22,7 +22,6 @@
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #include "sql/iterators/hash_join_iterator.h"
-#include "sql/iterators/optimistic_hash_join_iterator.h"
 
 #include <algorithm>
 #include <atomic>
