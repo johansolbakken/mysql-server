@@ -1000,8 +1000,7 @@ unique_ptr_destroy_only<RowIterator> CreateIteratorFromAccessPath(
                 : HashJoinInput::kBuild;
 
         // :nocheckin - TODO(johan): do a if HASH_JOIN, if OPTIMISTIC_HASH_JOIN create our own iterator
-        if (path->type==AccessPath::HASH_JOIN) {
-          iterator = NewIterator<HashJoinIterator>(
+        auto it = NewIterator<HashJoinIterator>(
               thd, mem_root, std::move(job.children[1]),
               GetUsedTables(param.inner, /*include_pruned_tables=*/true),
               estimated_build_rows, std::move(job.children[0]),
@@ -1011,18 +1010,10 @@ unique_ptr_destroy_only<RowIterator> CreateIteratorFromAccessPath(
               param.allow_spill_to_disk, join_type, *extra_conditions,
               CollectSingleRowIndexLookups(thd, path), first_input,
               probe_input_batch_mode, hash_table_generation);
-        } else if (path->type==AccessPath::OPTIMISTIC_HASH_JOIN) {
-          iterator = NewIterator<OptimisticHashJoinIterator>(
-              thd, mem_root, NewIterator<HashJoinIterator>(
-              thd, mem_root, std::move(job.children[1]),
-              GetUsedTables(param.inner, /*include_pruned_tables=*/true),
-              estimated_build_rows, std::move(job.children[0]),
-              GetUsedTables(param.outer, /*include_pruned_tables=*/true),
-              param.store_rowids, param.tables_to_get_rowid_for,
-              thd->variables.join_buff_size, std::move(conditions),
-              param.allow_spill_to_disk, join_type, *extra_conditions,
-              CollectSingleRowIndexLookups(thd, path), first_input,
-              probe_input_batch_mode, hash_table_generation));
+        if (path->type==AccessPath::HASH_JOIN) {
+          iterator = std::move(it);
+        } else if (path->type == AccessPath::OPTIMISTIC_HASH_JOIN) {
+          iterator = NewIterator<OptimisticHashJoinIterator>(thd, mem_root, std::move(it));
         } else {
           // Should never happen. There are only two hash join algs.
           assert(false);
