@@ -1013,7 +1013,26 @@ unique_ptr_destroy_only<RowIterator> CreateIteratorFromAccessPath(
         if (path->type==AccessPath::HASH_JOIN) {
           iterator = std::move(it);
         } else if (path->type == AccessPath::OPTIMISTIC_HASH_JOIN) {
-          iterator = NewIterator<OptimisticHashJoinIterator>(thd, mem_root, std::move(it));
+//          ha_rows num_rows_estimate = param.child->num_output_rows() < 0.0
+//            ? HA_POS_ERROR
+//            : lrint(param.child->num_output_rows());
+          ha_rows num_rows_estimate = lrint(0);
+//          Filesort *filesort = param.filesort;
+          Filesort *filesort = nullptr;
+          auto sort_it = NewIterator<SortingIterator>(
+            thd, mem_root, filesort, std::move(job.children[0]),
+//          CollectSingleRowIndexLookups(thd, param.child),
+            CollectSingleRowIndexLookups(thd, path),
+            num_rows_estimate,
+            param.tables_to_get_rowid_for, examined_rows);
+          if (filesort->m_remove_duplicates) {
+            filesort->tables[0]->duplicate_removal_iterator =
+              down_cast<SortingIterator *>(sort_it->real_iterator());
+          } else {
+            filesort->tables[0]->sorting_iterator =
+              down_cast<SortingIterator *>(sort_it->real_iterator());
+          }
+          iterator = NewIterator<OptimisticHashJoinIterator>(thd, mem_root, std::move(it), std::move(sort_it));
         } else {
           // Should never happen. There are only two hash join algs.
           assert(false);
