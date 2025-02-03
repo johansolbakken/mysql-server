@@ -24,19 +24,7 @@ struct AccessPath;
 
 class OptimisticHashJoinIterator final : public RowIterator {
  public:
-  OptimisticHashJoinIterator(THD *thd, unique_ptr_destroy_only<RowIterator> build_input,
-                         const Prealloced_array<TABLE *, 4> &build_input_tables,
-                         double estimated_build_rows,
-                         unique_ptr_destroy_only<RowIterator> probe_input,
-                         const Prealloced_array<TABLE *, 4> &probe_input_tables,
-                         bool store_rowids, table_map tables_to_get_rowid_for,
-                         size_t max_memory_available,
-                         const std::vector<HashJoinCondition> &join_conditions,
-                         bool allow_spill_to_disk, JoinType join_type,
-                         const Mem_root_array<Item *> &extra_conditions,
-                         std::span<AccessPath *> single_row_index_lookups,
-                         HashJoinInput first_input, bool probe_input_batch_mode,
-                         uint64_t *hash_table_generation);
+  OptimisticHashJoinIterator(THD *thd, unique_ptr_destroy_only<RowIterator> hash_join);
 
   bool Init() override;
 
@@ -49,11 +37,13 @@ class OptimisticHashJoinIterator final : public RowIterator {
     /*assert(!m_probe_row_read || m_state == State::END_OF_ROWS);*/
     /*m_build_input->SetNullRowFlag(is_null_row);*/
     /*m_probe_input->SetNullRowFlag(is_null_row);*/
+    m_hash_join->SetNullRowFlag(is_null_row);
   }
 
   void EndPSIBatchModeIfStarted() override {
     /*m_build_input->EndPSIBatchModeIfStarted();*/
     /*m_probe_input->EndPSIBatchModeIfStarted();*/
+    m_hash_join->EndPSIBatchModeIfStarted();
   }
 
   void UnlockRow() override {
@@ -61,6 +51,8 @@ class OptimisticHashJoinIterator final : public RowIterator {
     // them.
   }
 
+  RowIterator *real_iterator() override { return this; }
+  const RowIterator *real_iterator() const override { return this; }
   /*int ChunkCount() { return m_chunk_files_on_disk.size(); }*/
   /**/
   /*[[nodiscard]] bool WentOnDisk() const { return m_hash_join_type == HashJoinType::SPILL_TO_DISK; }*/
@@ -69,6 +61,7 @@ class OptimisticHashJoinIterator final : public RowIterator {
 private:
 //  const unique_ptr_destroy_only<RowIterator> m_build_input;
 //  const unique_ptr_destroy_only<RowIterator> m_probe_input;
+  const unique_ptr_destroy_only<RowIterator> m_hash_join;
 };
 
 #endif  // SQL_ITERATORS_OPTIMISTIC_HASH_JOIN_ITERATOR_H_
