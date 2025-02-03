@@ -11741,7 +11741,22 @@ double EstimateRowAccesses(const AccessPath *path, double num_evaluations,
             rows += EstimateRowAccesses(param.inner, num_evaluations, kNoLimit);
             return true;
           }
-          case AccessPath::OPTIMISTIC_HASH_JOIN:
+          case AccessPath::OPTIMISTIC_HASH_JOIN: {
+            // Hash join reads each side once. If there is a LIMIT clause, it
+            // might not need to read all rows from the outer table.
+            const auto &param = subpath->optimistic_hash_join();
+            rows += EstimateRowAccesses(
+                param.outer, num_evaluations,
+                GetRowsNeededFromOuterTable(subpath, param.outer, limit));
+            rows += EstimateRowAccesses(param.inner, num_evaluations, kNoLimit);
+            // Subqueries in the non-equijoin conditions may access rows.
+            for (Item *item : param.join_predicate->expr->join_conditions) {
+              rows += EstimateRowAccessesInItem(
+                  item, num_evaluations * subpath->num_output_rows());
+            }
+            return true;
+          }
+
           case AccessPath::HASH_JOIN: {
             // Hash join reads each side once. If there is a LIMIT clause, it
             // might not need to read all rows from the outer table.

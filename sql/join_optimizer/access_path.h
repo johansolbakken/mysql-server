@@ -740,12 +740,20 @@ struct AccessPath {
     return u.zero_rows_aggregated;
   }
   auto &hash_join() {
-    assert(type == HASH_JOIN || type == OPTIMISTIC_HASH_JOIN);
+    assert(type == HASH_JOIN);
     return u.hash_join;
   }
   const auto &hash_join() const {
-    assert(type == HASH_JOIN || type == OPTIMISTIC_HASH_JOIN);
+    assert(type == HASH_JOIN);
     return u.hash_join;
+  }
+  auto &optimistic_hash_join() {
+    assert(type == OPTIMISTIC_HASH_JOIN);
+    return u.optimistic_hash_join;
+  }
+  const auto &optimistic_hash_join() const {
+    assert(type == OPTIMISTIC_HASH_JOIN);
+    return u.optimistic_hash_join;
   }
   auto &bka_join() {
     assert(type == BKA_JOIN);
@@ -1163,6 +1171,29 @@ struct AccessPath {
       table_map tables_to_get_rowid_for;
     } hash_join;
     struct {
+      // Taken from hash_join
+      AccessPath *outer, *inner;
+      const JoinPredicate *join_predicate;
+      bool allow_spill_to_disk;
+      bool store_rowids;  // Whether we are below a weedout or not.
+      bool rewrite_semi_to_inner;
+      table_map tables_to_get_rowid_for;
+
+      // Taken from sort;
+      // AccessPath *child;
+      Filesort *filesort;
+      // table_map tables_to_get_rowid_for;
+
+      // If filesort is nullptr: A new filesort will be created at the
+      // end of optimization, using this order and flags. Otherwise: Only
+      // used by EXPLAIN.
+      ORDER *order;
+      ha_rows limit;
+      bool remove_duplicates;
+      bool unwrap_rollup;
+      bool force_sort_rowids;
+    } optimistic_hash_join;
+    struct {
       AccessPath *outer, *inner;
       JoinType join_type;
       unsigned mrr_length_per_rec;
@@ -1330,7 +1361,7 @@ static_assert(std::is_trivially_destructible<AccessPath>::value,
               "on the MEM_ROOT and not wrapped in unique_ptr_destroy_only"
               "(because multiple candidates during planning could point to "
               "the same access paths, and refcounting would be expensive)");
-static_assert(sizeof(AccessPath) <= 144,
+static_assert(sizeof(AccessPath) <= 144 + 77 /* adding optimistic hash join access path */,
               "We are creating a lot of access paths in the join "
               "optimizer, so be sure not to bloat it without noticing. "
               "(96 bytes for the base, 48 bytes for the variant.)");

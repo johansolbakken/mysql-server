@@ -909,7 +909,8 @@ unique_ptr_destroy_only<RowIterator> CreateIteratorFromAccessPath(
             CollectSingleRowIndexLookups(thd, path), param.join_type);
         break;
       }
-      case AccessPath::OPTIMISTIC_HASH_JOIN:
+      case AccessPath::OPTIMISTIC_HASH_JOIN: // :nocheckin - TODO: Make OPTIMISTIC_HASH_JOIN its own job since it
+                                             //                    has its own union struct in AccessPath
       case AccessPath::HASH_JOIN: {
         const auto &param = path->hash_join();
         if (job.children.is_null()) {
@@ -1462,6 +1463,14 @@ void FindTablesToGetRowidFor(AccessPath *path) {
   // having to ask the tables below).
   switch (path->type) {
     case AccessPath::OPTIMISTIC_HASH_JOIN:
+      WalkAccessPaths(path, /*join=*/nullptr,
+                          WalkAccessPathPolicy::STOP_AT_MATERIALIZATION,
+                          add_tables_handled_by_others);
+      path->optimistic_hash_join().store_rowids = true;
+      path->optimistic_hash_join().tables_to_get_rowid_for =
+              GetUsedTableMap(path, /*include_pruned_tables=*/true) &
+              ~handled_by_others;
+      break;
     case AccessPath::HASH_JOIN:
       WalkAccessPaths(path, /*join=*/nullptr,
                       WalkAccessPathPolicy::STOP_AT_MATERIALIZATION,
@@ -1655,12 +1664,18 @@ void ExpandSingleFilterAccessPath(THD *thd, AccessPath *path, const JOIN *join,
   // t2.b=t3.b edge, that predicate will be in filtered_predicates. In this
   // case, it is desirable to have t1.a=t3.a AND t2.b=t3.b as the hash join
   // predicate, and remove t2.b=t3.b from the filter predicates.
-  if ((path->type == AccessPath::HASH_JOIN || path->type == AccessPath::OPTIMISTIC_HASH_JOIN) &&
+  if (path->type == AccessPath::HASH_JOIN &&
       path->hash_join().join_predicate->expr->join_predicate_first !=
           path->hash_join().join_predicate->expr->join_predicate_last) {
     MoveFilterPredicatesIntoHashJoinCondition(thd, path, predicates,
                                               num_where_predicates);
   }
+  if (path->type == AccessPath::OPTIMISTIC_HASH_JOIN &&
+        path->optimistic_hash_join().join_predicate->expr->join_predicate_first !=
+            path->optimistic_hash_join().join_predicate->expr->join_predicate_last) {
+      MoveFilterPredicatesIntoHashJoinCondition(thd, path, predicates,
+                                                num_where_predicates);
+    }
 
   // Expand filters _after_ the access path (these are much more common).
   Item *condition = ConditionFromFilterPredicates(

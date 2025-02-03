@@ -893,7 +893,7 @@ static void dumpAccessPath(int level, AccessPath *p, std::ostringstream &buf) {
         break;
       case AccessPath::OPTIMISTIC_HASH_JOIN:
         str.append("AccessPath::OPTIMISTIC_HASH_JOIN outer: ... inner: ");
-        p = p->hash_join().inner;
+        p = p->optimistic_hash_join().inner;
         break;
       case AccessPath::NESTED_LOOP_JOIN:
         str.append("AccessPath::NESTED loop outer: ... inner: ");

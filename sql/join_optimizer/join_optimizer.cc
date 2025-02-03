@@ -5003,12 +5003,18 @@ void CostingReceiver::ProposeHashJoin(
   }
 
   // :nocheckin - TODO: PROPOSE OPTIMISTIC_HASH_JOIN
+  // TODO: Crashing since we use hash_join() in this, so we need another that is created
+  //       just for optimistic hash join.
   std::array<AccessPath::Type, 2> hash_join_types = {
     AccessPath::HASH_JOIN,
     AccessPath::OPTIMISTIC_HASH_JOIN
   };
 
   for (auto type : hash_join_types) {
+    if (type == AccessPath::HASH_JOIN) {
+      continue;
+    }
+
     AccessPath join_path;
     join_path.type = type;
     join_path.parameter_tables =
@@ -6298,6 +6304,9 @@ void PrintJoinOrder(const AccessPath *path, string *join_order) {
         inner = subpath->nested_loop_join().inner;
         break;
       case AccessPath::OPTIMISTIC_HASH_JOIN:
+        outer = subpath->optimistic_hash_join().outer;
+        inner = subpath->optimistic_hash_join().inner;
+        break;
       case AccessPath::HASH_JOIN:
         outer = subpath->hash_join().outer;
         inner = subpath->hash_join().inner;

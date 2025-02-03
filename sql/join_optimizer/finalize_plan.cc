@@ -761,6 +761,14 @@ Item *AddCachesAroundConstantConditions(Item *item) {
           AddCachesAroundConstantConditions(path->filter().condition);
       return path->filter().condition == nullptr;
     case AccessPath::OPTIMISTIC_HASH_JOIN:
+      for (Item *&item :
+        path->optimistic_hash_join().join_predicate->expr->join_conditions) {
+          item = AddCachesAroundConstantConditions(item);
+          if (item == nullptr) {
+            return true;
+          }
+        }
+        return false;
     case AccessPath::HASH_JOIN:
       for (Item *&item :
            path->hash_join().join_predicate->expr->join_conditions) {

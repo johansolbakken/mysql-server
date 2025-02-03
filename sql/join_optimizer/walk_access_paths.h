@@ -153,6 +153,9 @@ void ForEachChild(AccessPathPtr path, JoinPtr join,
       func(path->bka_join().inner, join);
       break;
     case AccessPath::OPTIMISTIC_HASH_JOIN:
+      func(path->optimistic_hash_join().inner, join);
+      func(path->optimistic_hash_join().outer, join);
+      break;
     case AccessPath::HASH_JOIN:
       func(path->hash_join().inner, join);
       func(path->hash_join().outer, join);

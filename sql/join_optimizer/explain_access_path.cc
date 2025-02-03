@@ -1559,7 +1559,127 @@ static unique_ptr<Json_object> SetObjectMembers(
       children->push_back({path->bka_join().inner});
       break;
     }
-    case AccessPath::OPTIMISTIC_HASH_JOIN:
+    case AccessPath::OPTIMISTIC_HASH_JOIN: {
+      const JoinPredicate *predicate = path->optimistic_hash_join().join_predicate;
+      RelationalExpression::Type type = path->optimistic_hash_join().rewrite_semi_to_inner
+                                            ? RelationalExpression::INNER_JOIN
+                                            : predicate->expr->type;
+      THD *const thd = current_thd;
+
+      string json_join_type;
+      description = HashJoinTypeToString(type, &json_join_type);
+      if (predicate->expr->type == RelationalExpression::SEMIJOIN) {
+        error |= AddMemberToObject<Json_string>(obj, "semijoin_strategy",
+                                                "firstmatch");
+      }
+      if (path->optimistic_hash_join().rewrite_semi_to_inner) {
+        if (path->optimistic_hash_join().outer->type == AccessPath::REMOVE_DUPLICATES) {
+          description.append(" (LooseScan)");
+          error |= AddMemberToObject<Json_string>(obj, "semijoin_strategy",
+                                                  "loosescan");
+        } else {
+          description.append(" (FirstMatch)");
+          error |= AddMemberToObject<Json_string>(obj, "semijoin_strategy",
+                                                  "firstmatch");
+        }
+      }
+      if ((type != RelationalExpression::SEMIJOIN) &&
+          path->optimistic_hash_join().inner->type ==
+              AccessPath::REMOVE_DUPLICATES_ON_INDEX) {
+        description.append(" (LooseScan)");
+        error |= AddMemberToObject<Json_string>(obj, "semijoin_strategy",
+                                                "loosescan");
+      }
+
+      unique_ptr<Json_array> hash_condition(new (std::nothrow) Json_array());
+      if (hash_condition == nullptr) return nullptr;
+      vector<HashJoinCondition> equijoin_conditions;
+      equijoin_conditions.reserve(predicate->expr->equijoin_conditions.size());
+      for (Item_eq_base *cond : predicate->expr->equijoin_conditions) {
+        equijoin_conditions.emplace_back(cond, thd->mem_root);
+      }
+      if (equijoin_conditions.empty()) {
+        if ((type != RelationalExpression::SEMIJOIN) &&
+            path->optimistic_hash_join().inner->type == AccessPath::LIMIT_OFFSET &&
+            path->optimistic_hash_join().inner->limit_offset().limit == 1) {
+          description.append(" (FirstMatch)");
+          error |= AddMemberToObject<Json_string>(obj, "semijoin_strategy",
+                                                  "firstmatch");
+        } else {
+          description.append(" (no condition)");
+        }
+      } else {
+        bool first = true;
+        for (const HashJoinCondition &hj_cond : equijoin_conditions) {
+          if (!first) {
+            description.push_back(',');
+          }
+          first = false;
+          string condition_str;
+          if (!hj_cond.store_full_sort_key()) {
+            condition_str =
+                "(<hash>(" + ItemToString(hj_cond.left_extractor()) +
+                ")=<hash>(" + ItemToString(hj_cond.right_extractor()) + "))";
+          } else {
+            condition_str = ItemToString(hj_cond.join_condition());
+          }
+          error |=
+              AddElementToArray<Json_string>(hash_condition, condition_str);
+          description.append(" " + condition_str);
+        }
+      }
+      error |= obj->add_alias("hash_condition", std::move(hash_condition));
+
+      const Mem_root_array<Item *> *extra_join_conditions =
+          GetExtraHashJoinConditions(
+              thd->mem_root, thd->lex->using_hypergraph_optimizer(),
+              equijoin_conditions, predicate->expr->join_conditions);
+      if (extra_join_conditions == nullptr) return nullptr;
+
+      unique_ptr<Json_array> extra_condition(new (std::nothrow) Json_array());
+      if (extra_condition == nullptr) return nullptr;
+      bool first = true;
+      for (Item *cond : *extra_join_conditions) {
+        if (first) {
+          description.append(", extra conditions: ");
+          first = false;
+        } else {
+          description += " and ";
+        }
+        string condition_str = ItemToString(cond);
+        description += condition_str;
+        error |= AddElementToArray<Json_string>(extra_condition, condition_str);
+      }
+      if (extra_condition->size() > 0)
+        error |= obj->add_alias("extra_condition", std::move(extra_condition));
+
+      error |= AddMemberToObject<Json_string>(obj, "access_type", "join");
+      error |= AddMemberToObject<Json_string>(obj, "join_type", json_join_type);
+      error |= AddMemberToObject<Json_string>(obj, "join_algorithm", "hash");
+      children->push_back({path->optimistic_hash_join().outer});
+      children->push_back({path->optimistic_hash_join().inner, "Hash"});
+
+      const RelationalExpression *join_predicate =
+          path->optimistic_hash_join().join_predicate->expr;
+      ColumnNameCollector cnc;
+      for (Item_eq_base *cond : join_predicate->equijoin_conditions) {
+        AddSubqueryPaths(cond, "condition", children);
+        WalkItem(cond, enum_walk::PREFIX, cnc);
+      }
+      for (Item *cond : join_predicate->join_conditions) {
+        AddSubqueryPaths(cond, "extra conditions", children);
+        WalkItem(cond, enum_walk::PREFIX, cnc);
+      }
+      unique_ptr<Json_array> join_columns(new (std::nothrow) Json_array());
+      if (join_columns == nullptr) return nullptr;
+      for (const std::string &column_name : cnc.column_names()) {
+        error |= AddElementToArray<Json_string>(join_columns, column_name);
+      }
+      error |= obj->add_alias("join_columns", std::move(join_columns));
+
+      break;
+    }
+      
     case AccessPath::HASH_JOIN: {
       const JoinPredicate *predicate = path->hash_join().join_predicate;
       RelationalExpression::Type type = path->hash_join().rewrite_semi_to_inner
