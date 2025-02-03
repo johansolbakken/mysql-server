@@ -10,10 +10,12 @@ bool OptimisticHashJoinIterator::Init(){
   if(m_hash_join->Init()) {
     return true;
   }
-    return false;
+  if (m_sort->Init()) {
+      return true;
+  }
+  return false;
 }
 
 int OptimisticHashJoinIterator::Read(){
   return m_hash_join->Read();
 }
-

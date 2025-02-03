@@ -1,8 +1,6 @@
 #ifndef SQL_ITERATORS_OPTIMISTIC_HASH_JOIN_ITERATOR_H_
 #define SQL_ITERATORS_OPTIMISTIC_HASH_JOIN_ITERATOR_H_
 
-#include <cassert>
-
 #include "my_alloc.h"
 #include "sql/item_cmpfunc.h"
 #include "sql/iterators/hash_join_buffer.h"
