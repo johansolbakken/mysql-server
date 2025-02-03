@@ -56,6 +56,7 @@
 #include "sql/item_subselect.h"
 #include "sql/item_sum.h"
 #include "sql/iterators/hash_join_iterator.h"
+#include "sql/iterators/optimistic_hash_join_iterator.h"
 #include "sql/iterators/row_iterator.h"
 #include "sql/join_optimizer/access_path.h"
 #include "sql/join_optimizer/bit_utils.h"
@@ -1095,9 +1096,8 @@ static bool AddPathCosts(const AccessPath *path,
     int num_init_calls = 0;
 
     if (path->iterator != nullptr) {
-
       // :nocheckin - Here we set "actual" values
-      if (path->type == AccessPath::HASH_JOIN || path->type == AccessPath::OPTIMISTIC_HASH_JOIN) {
+      if (path->type == AccessPath::HASH_JOIN) {
         const auto *iterator = dynamic_cast<const HashJoinIterator*>(path->iterator->real_iterator());
         error |= AddMemberToObject<Json_boolean>(
             obj, "went_on_disk",
@@ -1106,6 +1106,16 @@ static bool AddPathCosts(const AccessPath *path,
         error |= AddMemberToObject<Json_boolean>(
             obj, "was_in_memory",
             iterator->WasInMemory());
+      } else if (path->type == AccessPath::OPTIMISTIC_HASH_JOIN) {
+        const auto *iterator = dynamic_cast<const OptimisticHashJoinIterator*>(path->iterator->real_iterator());
+        const auto *hash_join_iterator = dynamic_cast<const HashJoinIterator*>(iterator->hash_join_iterator()->real_iterator());
+        error |= AddMemberToObject<Json_boolean>(
+            obj, "went_on_disk",
+            hash_join_iterator->WentOnDisk());
+
+        error |= AddMemberToObject<Json_boolean>(
+            obj, "was_in_memory",
+            hash_join_iterator->WasInMemory());
       }
 
       const IteratorProfiler *const profiler = path->iterator->GetProfiler();

@@ -51,8 +51,8 @@ class OptimisticHashJoinIterator final : public RowIterator {
     // them.
   }
 
-  RowIterator *real_iterator() override { return this; }
-  const RowIterator *real_iterator() const override { return this; }
+  const RowIterator* hash_join_iterator() const { return m_hash_join->real_iterator(); }
+
   /*int ChunkCount() { return m_chunk_files_on_disk.size(); }*/
   /**/
   /*[[nodiscard]] bool WentOnDisk() const { return m_hash_join_type == HashJoinType::SPILL_TO_DISK; }*/
