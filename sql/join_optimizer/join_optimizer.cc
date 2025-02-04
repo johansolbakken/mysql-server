@@ -787,6 +787,16 @@ class CostingReceiver {
                        FunctionalDependencySet new_fd_set,
                        OrderingSet new_obsolete_orderings,
                        bool rewrite_semi_to_inner, bool *wrote_trace);
+  bool AllowOptimisticHashJoin(NodeMap left, NodeMap right,
+                               const AccessPath &left_path,
+                               const AccessPath &right_path,
+                               const JoinPredicate &edge) const;
+  void ProposeOptimisticHashJoin(NodeMap left, NodeMap right,
+                                 AccessPath *left_path, AccessPath *right_path,
+                                 const JoinPredicate *edge,
+                                 FunctionalDependencySet new_fd_set,
+                                 OrderingSet new_obsolete_orderings,
+                                 bool rewrite_semi_to_inner, bool *wrote_trace);
   bool AllowHashJoin(NodeMap left, NodeMap right, const AccessPath &left_path,
                      const AccessPath &right_path,
                      const JoinPredicate &edge) const;
@@ -5002,205 +5012,434 @@ void CostingReceiver::ProposeHashJoin(
                                         &right_path);
   }
 
-  // :nocheckin - TODO: PROPOSE OPTIMISTIC_HASH_JOIN
-  // TODO: Crashing since we use hash_join() in this, so we need another that is created
-  //       just for optimistic hash join.
-  std::array<AccessPath::Type, 2> hash_join_types = {
-    AccessPath::HASH_JOIN,
-    AccessPath::OPTIMISTIC_HASH_JOIN
-  };
+  AccessPath join_path;
+  join_path.type = AccessPath::HASH_JOIN;
+  join_path.parameter_tables =
+      (left_path->parameter_tables | right_path->parameter_tables) &
+      ~(left | right);
+  join_path.hash_join().outer = left_path;
+  join_path.hash_join().inner = right_path;
+  join_path.hash_join().join_predicate = edge;
+  join_path.hash_join().store_rowids = false;
+  join_path.hash_join().rewrite_semi_to_inner = rewrite_semi_to_inner;
+  join_path.hash_join().tables_to_get_rowid_for = 0;
+  join_path.hash_join().allow_spill_to_disk = true;
+  join_path.has_group_skip_scan =
+      left_path->has_group_skip_scan || right_path->has_group_skip_scan;
 
-  for (auto type : hash_join_types) {
-    if (type == AccessPath::HASH_JOIN) {
-      continue;
+  // See the equivalent code in ProposeNestedLoopJoin().
+  if (rewrite_semi_to_inner) {
+    int ordering_idx = edge->ordering_idx_needed_for_semijoin_rewrite;
+    assert(ordering_idx != -1);
+    if (ordering_idx != 0 && !m_orderings->DoesFollowOrder(
+                                 left_path->ordering_state, ordering_idx)) {
+      return;
     }
+    assert(edge->expr->type == RelationalExpression::SEMIJOIN);
 
-    AccessPath join_path;
-    join_path.type = type;
-    join_path.parameter_tables =
-        (left_path->parameter_tables | right_path->parameter_tables) &
-        ~(left | right);
-    join_path.hash_join().outer = left_path;
-    join_path.hash_join().inner = right_path;
-    join_path.hash_join().join_predicate = edge;
-    join_path.hash_join().store_rowids = false;
-    join_path.hash_join().rewrite_semi_to_inner = rewrite_semi_to_inner;
-    join_path.hash_join().tables_to_get_rowid_for = 0;
-    join_path.hash_join().allow_spill_to_disk = true;
-    join_path.has_group_skip_scan =
-        left_path->has_group_skip_scan || right_path->has_group_skip_scan;
+    // NOTE: We purposefully don't overwrite left_path here, so that we
+    // don't have to worry about copying ordering_state etc.
+    CommitBitsetsToHeap(left_path);
+    join_path.hash_join().outer =
+        DeduplicateForSemijoin(m_thd, left_path, edge->semijoin_group,
+                               edge->semijoin_group_size, edge->expr);
+  }
 
-    // See the equivalent code in ProposeNestedLoopJoin().
+  // TODO(sgunders): Consider removing redundant join conditions.
+  // Normally, it's better to have more equijoin conditions than fewer,
+  // but in this case, every row should fall into the same hash bucket anyway,
+  // so they do not help.
+
+  double num_output_rows;
+  {
+    double right_path_already_applied_selectivity =
+        FindAlreadyAppliedSelectivity(edge, left_path, right_path, left, right);
+    if (right_path_already_applied_selectivity < 0.0) {
+      return;
+    }
+    double outer_input_rows = left_path->num_output_rows();
+    double inner_input_rows =
+        right_path->num_output_rows() / right_path_already_applied_selectivity;
+
+    // If left and right are flipped for semijoins, we need to flip
+    // them back for row calculation (or we'd clamp to the wrong value).
     if (rewrite_semi_to_inner) {
-      int ordering_idx = edge->ordering_idx_needed_for_semijoin_rewrite;
-      assert(ordering_idx != -1);
-      if (ordering_idx != 0 && !m_orderings->DoesFollowOrder(
-                                   left_path->ordering_state, ordering_idx)) {
-        return;
-      }
-      assert(edge->expr->type == RelationalExpression::SEMIJOIN);
-
-      // NOTE: We purposefully don't overwrite left_path here, so that we
-      // don't have to worry about copying ordering_state etc.
-      CommitBitsetsToHeap(left_path);
-      join_path.hash_join().outer =
-          DeduplicateForSemijoin(m_thd, left_path, edge->semijoin_group,
-                                 edge->semijoin_group_size, edge->expr);
+      swap(outer_input_rows, inner_input_rows);
     }
 
-    // TODO(sgunders): Consider removing redundant join conditions.
-    // Normally, it's better to have more equijoin conditions than fewer,
-    // but in this case, every row should fall into the same hash bucket anyway,
-    // so they do not help.
+    num_output_rows =
+        FindOutputRowsForJoin(m_thd, outer_input_rows, inner_input_rows, edge);
+  }
 
-    double num_output_rows;
-    {
-      double right_path_already_applied_selectivity =
-          FindAlreadyAppliedSelectivity(edge, left_path, right_path, left,
-                                        right);
-      if (right_path_already_applied_selectivity < 0.0) {
-        return;
-      }
-      double outer_input_rows = left_path->num_output_rows();
-      double inner_input_rows = right_path->num_output_rows() /
-                                right_path_already_applied_selectivity;
+  // left_path and join_path.hash_join().outer are intentionally different if
+  // rewrite_semi_to_inner is true. See comment where DeduplicateForSemijoin()
+  // is called above. We want to calculate join cost based on the actual left
+  // child, so use join_path.hash_join().outer in cost calculations for
+  // join_path.
+  const AccessPath *outer = join_path.hash_join().outer;
 
-      // If left and right are flipped for semijoins, we need to flip
-      // them back for row calculation (or we'd clamp to the wrong value).
-      if (rewrite_semi_to_inner) {
-        swap(outer_input_rows, inner_input_rows);
-      }
+  // TODO(sgunders): Add estimates for spill-to-disk costs.
+  // NOTE: Keep this in sync with SimulateJoin().
+  const double build_cost =
+      right_path->cost() + right_path->num_output_rows() * kHashBuildOneRowCost;
+  double cost = outer->cost() + build_cost +
+                outer->num_output_rows() * kHashProbeOneRowCost +
+                num_output_rows * kHashReturnOneRowCost;
 
-      num_output_rows = FindOutputRowsForJoin(m_thd, outer_input_rows,
-                                              inner_input_rows, edge);
-    }
+  // Note: This isn't strictly correct if the non-equijoin conditions
+  // have selectivities far from 1.0; the cost should be calculated
+  // on the number of rows after the equijoin conditions, but before
+  // the non-equijoin conditions.
+  cost += num_output_rows * edge->expr->join_conditions.size() *
+          kApplyOneFilterCost;
 
-    // left_path and join_path.hash_join().outer are intentionally different if
-    // rewrite_semi_to_inner is true. See comment where DeduplicateForSemijoin()
-    // is called above. We want to calculate join cost based on the actual left
-    // child, so use join_path.hash_join().outer in cost calculations for
-    // join_path.
-    const AccessPath *outer = join_path.hash_join().outer;
+  join_path.num_output_rows_before_filter = num_output_rows;
+  join_path.set_cost_before_filter(cost);
+  join_path.set_num_output_rows(num_output_rows);
+  join_path.set_init_cost(build_cost + outer->init_cost());
 
-    // TODO(sgunders): Add estimates for spill-to-disk costs.
-    // NOTE: Keep this in sync with SimulateJoin().
-    const double build_cost =
-        right_path->cost() +
-        right_path->num_output_rows() * kHashBuildOneRowCost;
-    double cost = outer->cost() + build_cost +
-                  outer->num_output_rows() * kHashProbeOneRowCost +
-                  num_output_rows * kHashReturnOneRowCost;
+  double estimated_bytes_per_row = edge->estimated_bytes_per_row;
 
-    // Note: This isn't strictly correct if the non-equijoin conditions
-    // have selectivities far from 1.0; the cost should be calculated
-    // on the number of rows after the equijoin conditions, but before
-    // the non-equijoin conditions.
-    cost += num_output_rows * edge->expr->join_conditions.size() *
-            kApplyOneFilterCost;
-
-    join_path.num_output_rows_before_filter = num_output_rows;
-    join_path.set_cost_before_filter(cost);
-    join_path.set_num_output_rows(num_output_rows);
-    join_path.set_init_cost(build_cost + outer->init_cost());
-
-    double estimated_bytes_per_row = edge->estimated_bytes_per_row;
-
-    // If the edge is part of a cycle in the hypergraph, there may be other
-    // usable join predicates in other edges.
-    // MoveFilterPredicatesIntoHashJoinCondition() will widen the hash join
-    // predicate in that case, so account for that here. Only relevant when
-    // joining more than two tables. Say {t1,t2} HJ {t3}, which could be joined
-    // both along a t1-t3 edge and a t2-t3 edge.
-    //
-    // TODO(khatlen): The cost is still calculated as if the hash join only uses
-    // "edge", and that the alternative edges are put in filters on top of the
-    // join.
-    if (edge->expr->join_predicate_first != edge->expr->join_predicate_last &&
-        popcount(left | right) > 2) {
-      // Only inner joins are part of cycles.
-      assert(edge->expr->type == RelationalExpression::INNER_JOIN);
-      for (size_t edge_idx = 0; edge_idx < m_graph->graph.edges.size();
-           ++edge_idx) {
-        Hyperedge hyperedge = m_graph->graph.edges[edge_idx];
-        if (IsSubset(hyperedge.left, left) &&
-            IsSubset(hyperedge.right, right)) {
-          const JoinPredicate *other_edge = &m_graph->edges[edge_idx / 2];
-          assert(other_edge->expr->type == RelationalExpression::INNER_JOIN);
-          if (other_edge != edge &&
-              PassesConflictRules(left | right, other_edge->expr)) {
-            estimated_bytes_per_row +=
-                EstimateHashJoinKeyWidth(other_edge->expr);
-          }
+  // If the edge is part of a cycle in the hypergraph, there may be other
+  // usable join predicates in other edges.
+  // MoveFilterPredicatesIntoHashJoinCondition() will widen the hash join
+  // predicate in that case, so account for that here. Only relevant when
+  // joining more than two tables. Say {t1,t2} HJ {t3}, which could be joined
+  // both along a t1-t3 edge and a t2-t3 edge.
+  //
+  // TODO(khatlen): The cost is still calculated as if the hash join only uses
+  // "edge", and that the alternative edges are put in filters on top of the
+  // join.
+  if (edge->expr->join_predicate_first != edge->expr->join_predicate_last &&
+      popcount(left | right) > 2) {
+    // Only inner joins are part of cycles.
+    assert(edge->expr->type == RelationalExpression::INNER_JOIN);
+    for (size_t edge_idx = 0; edge_idx < m_graph->graph.edges.size();
+         ++edge_idx) {
+      Hyperedge hyperedge = m_graph->graph.edges[edge_idx];
+      if (IsSubset(hyperedge.left, left) && IsSubset(hyperedge.right, right)) {
+        const JoinPredicate *other_edge = &m_graph->edges[edge_idx / 2];
+        assert(other_edge->expr->type == RelationalExpression::INNER_JOIN);
+        if (other_edge != edge &&
+            PassesConflictRules(left | right, other_edge->expr)) {
+          estimated_bytes_per_row += EstimateHashJoinKeyWidth(other_edge->expr);
         }
       }
     }
+  }
 
-    const double reuse_buffer_probability = [&]() {
-      if (right_path->parameter_tables > 0) {
-        // right_path has external dependencies, so the buffer cannot be reused.
-        return 0.0;
-      } else {
-        /*
-          If the full data set from right_path fits in the join buffer,
-          we never need to rebuild the hash table. build_cost should
-          then be counted as init_once_cost. Otherwise, build_cost will
-          be incurred for each re-scan. To get a good estimate of
-          init_once_cost we therefor need to estimate the chance of
-          exceeding the join buffer size. We estimate this probability as:
+  const double reuse_buffer_probability = [&]() {
+    if (right_path->parameter_tables > 0) {
+      // right_path has external dependencies, so the buffer cannot be reused.
+      return 0.0;
+    } else {
+      /*
+        If the full data set from right_path fits in the join buffer,
+        we never need to rebuild the hash table. build_cost should
+        then be counted as init_once_cost. Otherwise, build_cost will
+        be incurred for each re-scan. To get a good estimate of
+        init_once_cost we therefor need to estimate the chance of
+        exceeding the join buffer size. We estimate this probability as:
 
-          (expected_data_volume / join_buffer_size)^2
+        (expected_data_volume / join_buffer_size)^2
 
-          for expected_data_volume < join_buffer_size and 1.0 otherwise.
-        */
-        const double buffer_usage = std::min(
-            1.0, estimated_bytes_per_row * right_path->num_output_rows() /
-                     m_thd->variables.join_buff_size);
-        return 1.0 - buffer_usage * buffer_usage;
-      }
-    }();
+        for expected_data_volume < join_buffer_size and 1.0 otherwise.
+      */
+      const double buffer_usage = std::min(
+          1.0, estimated_bytes_per_row * right_path->num_output_rows() /
+                   m_thd->variables.join_buff_size);
+      return 1.0 - buffer_usage * buffer_usage;
+    }
+  }();
 
-    join_path.set_init_once_cost(outer->init_once_cost() +
-                                 (1.0 - reuse_buffer_probability) *
-                                     right_path->init_once_cost() +
-                                 reuse_buffer_probability * build_cost);
+  join_path.set_init_once_cost(outer->init_once_cost() +
+                               (1.0 - reuse_buffer_probability) *
+                                   right_path->init_once_cost() +
+                               reuse_buffer_probability * build_cost);
 
-    join_path.set_cost(cost);
+  join_path.set_cost(cost);
 
-    // For each scan, hash join will read the left side once and the right side
-    // once, so we are as safe as the least safe of the two. (This isn't true
-    // if we set spill_to_disk = false, but we never do that in the hypergraph
-    // optimizer.) Note that if the right side fits entirely in RAM, we don't
-    // scan it the second time (so we could make the operation _more_ safe
-    // than the right side, and we should consider both ways of doing
-    // an inner join), but we cannot know that when planning.
-    join_path.safe_for_rowid =
-        std::max(left_path->safe_for_rowid, right_path->safe_for_rowid);
+  // For each scan, hash join will read the left side once and the right side
+  // once, so we are as safe as the least safe of the two. (This isn't true
+  // if we set spill_to_disk = false, but we never do that in the hypergraph
+  // optimizer.) Note that if the right side fits entirely in RAM, we don't
+  // scan it the second time (so we could make the operation _more_ safe
+  // than the right side, and we should consider both ways of doing
+  // an inner join), but we cannot know that when planning.
+  join_path.safe_for_rowid =
+      std::max(left_path->safe_for_rowid, right_path->safe_for_rowid);
 
-    // Only trace once; the rest ought to be identical.
-    if (TraceStarted(m_thd) && !*wrote_trace) {
-      Trace(m_thd) << PrintSubgraphHeader(edge, join_path, left, right);
-      *wrote_trace = true;
+  // Only trace once; the rest ought to be identical.
+  if (TraceStarted(m_thd) && !*wrote_trace) {
+    Trace(m_thd) << PrintSubgraphHeader(edge, join_path, left, right);
+    *wrote_trace = true;
+  }
+
+  for (bool materialize_subqueries : {false, true}) {
+    AccessPath new_path = join_path;
+    FunctionalDependencySet filter_fd_set;
+    ApplyDelayedPredicatesAfterJoin(
+        left, right, left_path, right_path, edge->expr->join_predicate_first,
+        edge->expr->join_predicate_last, materialize_subqueries, &new_path,
+        &filter_fd_set);
+    // Hash join destroys all ordering information (even from the left side,
+    // since we may have spill-to-disk).
+    new_path.ordering_state = m_orderings->ApplyFDs(m_orderings->SetOrder(0),
+                                                    new_fd_set | filter_fd_set);
+    ProposeAccessPathWithOrderings(left | right, new_fd_set | filter_fd_set,
+                                   new_obsolete_orderings, &new_path,
+                                   materialize_subqueries ? "mat. subq." : "");
+
+    if (!Overlaps(new_path.filter_predicates,
+                  m_graph->materializable_predicates)) {
+      break;
+    }
+  }
+}
+
+bool CostingReceiver::AllowOptimisticHashJoin(NodeMap left, NodeMap right,
+                                              const AccessPath &left_path,
+                                              const AccessPath &right_path,
+                                              const JoinPredicate &edge) const {
+  if (!AllowHashJoin(left, right, left_path, right_path, edge)) {
+    return false;
+  }
+
+  // TODO: :nocheckin Allow optimistic hash join if probe table has sorting and build table
+  //       can be estimated to fit in memory = true
+
+  return true;
+}
+
+void CostingReceiver::ProposeOptimisticHashJoin(
+    NodeMap left, NodeMap right, AccessPath *left_path, AccessPath *right_path,
+    const JoinPredicate *edge, FunctionalDependencySet new_fd_set,
+    OrderingSet new_obsolete_orderings, bool rewrite_semi_to_inner,
+    bool *wrote_trace) {
+  assert(BitsetsAreCommitted(left_path));
+  assert(BitsetsAreCommitted(right_path));
+
+  if (!AllowOptimisticHashJoin(left, right, *left_path, *right_path, *edge)) {
+    return;
+  }
+
+  // If semijoin strategy, loose scan is forced, but the current plan
+  // is to not choose loose scan, we dont need to propose any plan now.
+  // However, loose scan is not possible for all cases. So we check here
+  // if loose scan is possible. If not, propose the current plan.
+  bool forced_loose_scan =
+      edge->expr->sj_enabled_strategies & OPTIMIZER_SWITCH_LOOSE_SCAN &&
+      !(edge->expr->sj_enabled_strategies & OPTIMIZER_SWITCH_FIRSTMATCH);
+  if (!rewrite_semi_to_inner &&
+      (forced_loose_scan && edge->semijoin_group_size)) {
+    return;
+  }
+
+  if (edge->expr->type == RelationalExpression::LEFT_JOIN &&
+      SecondaryEngineHandlerton(m_thd) != nullptr) {
+    MoveDegenerateJoinConditionToFilter(m_thd, m_query_block, &edge,
+                                        &right_path);
+  }
+
+  // :nocheckin - TODO: PROPOSE OPTIMISTIC_HASH_JOIN
+  AccessPath join_path;
+  join_path.type = AccessPath::OPTIMISTIC_HASH_JOIN;
+  join_path.parameter_tables =
+      (left_path->parameter_tables | right_path->parameter_tables) &
+      ~(left | right);
+  join_path.optimistic_hash_join().outer = left_path;
+  join_path.optimistic_hash_join().inner = right_path;
+  join_path.optimistic_hash_join().join_predicate = edge;
+  join_path.optimistic_hash_join().store_rowids = false;
+  join_path.optimistic_hash_join().rewrite_semi_to_inner = rewrite_semi_to_inner;
+  join_path.optimistic_hash_join().tables_to_get_rowid_for = 0;
+  join_path.optimistic_hash_join().allow_spill_to_disk = true;
+  join_path.has_group_skip_scan =
+      left_path->has_group_skip_scan || right_path->has_group_skip_scan;
+
+  // See the equivalent code in ProposeNestedLoopJoin().
+  if (rewrite_semi_to_inner) {
+    int ordering_idx = edge->ordering_idx_needed_for_semijoin_rewrite;
+    assert(ordering_idx != -1);
+    if (ordering_idx != 0 && !m_orderings->DoesFollowOrder(
+                                 left_path->ordering_state, ordering_idx)) {
+      return;
+    }
+    assert(edge->expr->type == RelationalExpression::SEMIJOIN);
+
+    // NOTE: We purposefully don't overwrite left_path here, so that we
+    // don't have to worry about copying ordering_state etc.
+    CommitBitsetsToHeap(left_path);
+    join_path.optimistic_hash_join().outer =
+        DeduplicateForSemijoin(m_thd, left_path, edge->semijoin_group,
+                               edge->semijoin_group_size, edge->expr);
+  }
+
+  // TODO(sgunders): Consider removing redundant join conditions.
+  // Normally, it's better to have more equijoin conditions than fewer,
+  // but in this case, every row should fall into the same hash bucket anyway,
+  // so they do not help.
+
+  double num_output_rows;
+  {
+    double right_path_already_applied_selectivity =
+        FindAlreadyAppliedSelectivity(edge, left_path, right_path, left, right);
+    if (right_path_already_applied_selectivity < 0.0) {
+      return;
+    }
+    double outer_input_rows = left_path->num_output_rows();
+    double inner_input_rows =
+        right_path->num_output_rows() / right_path_already_applied_selectivity;
+
+    // If left and right are flipped for semijoins, we need to flip
+    // them back for row calculation (or we'd clamp to the wrong value).
+    if (rewrite_semi_to_inner) {
+      swap(outer_input_rows, inner_input_rows);
     }
 
-    for (bool materialize_subqueries : {false, true}) {
-      AccessPath new_path = join_path;
-      FunctionalDependencySet filter_fd_set;
-      ApplyDelayedPredicatesAfterJoin(
-          left, right, left_path, right_path, edge->expr->join_predicate_first,
-          edge->expr->join_predicate_last, materialize_subqueries, &new_path,
-          &filter_fd_set);
-      // Hash join destroys all ordering information (even from the left side,
-      // since we may have spill-to-disk).
-      new_path.ordering_state = m_orderings->ApplyFDs(
-          m_orderings->SetOrder(0), new_fd_set | filter_fd_set);
-      ProposeAccessPathWithOrderings(
-          left | right, new_fd_set | filter_fd_set, new_obsolete_orderings,
-          &new_path, materialize_subqueries ? "mat. subq." : "");
+    num_output_rows =
+        FindOutputRowsForJoin(m_thd, outer_input_rows, inner_input_rows, edge);
+  }
 
-      if (!Overlaps(new_path.filter_predicates,
-                    m_graph->materializable_predicates)) {
-        break;
+  // left_path and join_path.hash_join().outer are intentionally different if
+  // rewrite_semi_to_inner is true. See comment where DeduplicateForSemijoin()
+  // is called above. We want to calculate join cost based on the actual left
+  // child, so use join_path.hash_join().outer in cost calculations for
+  // join_path.
+  const AccessPath *outer = join_path.optimistic_hash_join().outer;
+
+  // TODO(sgunders): Add estimates for spill-to-disk costs.
+  // NOTE: Keep this in sync with SimulateJoin().
+  const double build_cost =
+      right_path->cost() + right_path->num_output_rows() * kHashBuildOneRowCost;
+  double cost = outer->cost() + build_cost +
+                outer->num_output_rows() * kHashProbeOneRowCost +
+                num_output_rows * kHashReturnOneRowCost;
+
+  // Note: This isn't strictly correct if the non-equijoin conditions
+  // have selectivities far from 1.0; the cost should be calculated
+  // on the number of rows after the equijoin conditions, but before
+  // the non-equijoin conditions.
+  cost += num_output_rows * edge->expr->join_conditions.size() *
+          kApplyOneFilterCost;
+
+  join_path.num_output_rows_before_filter = num_output_rows;
+  join_path.set_cost_before_filter(cost);
+  join_path.set_num_output_rows(num_output_rows);
+  join_path.set_init_cost(build_cost + outer->init_cost());
+
+  double estimated_bytes_per_row = edge->estimated_bytes_per_row;
+
+  // If the edge is part of a cycle in the hypergraph, there may be other
+  // usable join predicates in other edges.
+  // MoveFilterPredicatesIntoHashJoinCondition() will widen the hash join
+  // predicate in that case, so account for that here. Only relevant when
+  // joining more than two tables. Say {t1,t2} HJ {t3}, which could be joined
+  // both along a t1-t3 edge and a t2-t3 edge.
+  //
+  // TODO(khatlen): The cost is still calculated as if the hash join only uses
+  // "edge", and that the alternative edges are put in filters on top of the
+  // join.
+  if (edge->expr->join_predicate_first != edge->expr->join_predicate_last &&
+      popcount(left | right) > 2) {
+    // Only inner joins are part of cycles.
+    assert(edge->expr->type == RelationalExpression::INNER_JOIN);
+    for (size_t edge_idx = 0; edge_idx < m_graph->graph.edges.size();
+         ++edge_idx) {
+      Hyperedge hyperedge = m_graph->graph.edges[edge_idx];
+      if (IsSubset(hyperedge.left, left) && IsSubset(hyperedge.right, right)) {
+        const JoinPredicate *other_edge = &m_graph->edges[edge_idx / 2];
+        assert(other_edge->expr->type == RelationalExpression::INNER_JOIN);
+        if (other_edge != edge &&
+            PassesConflictRules(left | right, other_edge->expr)) {
+          estimated_bytes_per_row += EstimateHashJoinKeyWidth(other_edge->expr);
+        }
       }
+    }
+  }
+
+  const double reuse_buffer_probability = [&]() {
+    if (right_path->parameter_tables > 0) {
+      // right_path has external dependencies, so the buffer cannot be reused.
+      return 0.0;
+    } else {
+      /*
+        If the full data set from right_path fits in the join buffer,
+        we never need to rebuild the hash table. build_cost should
+        then be counted as init_once_cost. Otherwise, build_cost will
+        be incurred for each re-scan. To get a good estimate of
+        init_once_cost we therefor need to estimate the chance of
+        exceeding the join buffer size. We estimate this probability as:
+
+        (expected_data_volume / join_buffer_size)^2
+
+        for expected_data_volume < join_buffer_size and 1.0 otherwise.
+      */
+      const double buffer_usage = std::min(
+          1.0, estimated_bytes_per_row * right_path->num_output_rows() /
+                   m_thd->variables.join_buff_size);
+      return 1.0 - buffer_usage * buffer_usage;
+    }
+  }();
+
+  join_path.set_init_once_cost(outer->init_once_cost() +
+                               (1.0 - reuse_buffer_probability) *
+                                   right_path->init_once_cost() +
+                               reuse_buffer_probability * build_cost);
+
+  join_path.set_cost(cost);
+
+  // For each scan, hash join will read the left side once and the right side
+  // once, so we are as safe as the least safe of the two. (This isn't true
+  // if we set spill_to_disk = false, but we never do that in the hypergraph
+  // optimizer.) Note that if the right side fits entirely in RAM, we don't
+  // scan it the second time (so we could make the operation _more_ safe
+  // than the right side, and we should consider both ways of doing
+  // an inner join), but we cannot know that when planning.
+  join_path.safe_for_rowid =
+      std::max(left_path->safe_for_rowid, right_path->safe_for_rowid);
+
+  // NOTE: Setting up ordering information
+  join_path.ordering_state = join_path.optimistic_hash_join().outer->ordering_state; // copy ordering of probe table
+  // if (!join_path.applied_sargable_join_predicates()
+  //          .empty()) {  // Will be empty after grouping.
+  //   MutableOverflowBitset applied_sargable_join_predicates =
+  //       child->applied_sargable_join_predicates().Clone(thd->mem_root);
+  //   applied_sargable_join_predicates.ClearBits(0, num_where_predicates);
+  //   sort_path.applied_sargable_join_predicates() =
+  //       std::move(applied_sargable_join_predicates);
+  // }
+  join_path.delayed_predicates = join_path.delayed_predicates;
+  join_path.optimistic_hash_join().filesort = nullptr;
+  join_path.optimistic_hash_join().tables_to_get_rowid_for = 0;
+  // join_path.optimistic_hash_join().order = order;
+  join_path.optimistic_hash_join().remove_duplicates = false;
+  join_path.optimistic_hash_join().unwrap_rollup = true;
+  join_path.optimistic_hash_join().limit = HA_POS_ERROR;
+  join_path.optimistic_hash_join().force_sort_rowids = false;
+  // EstimateSortCost(thd, &sort_path);
+
+
+  // Only trace once; the rest ought to be identical.
+  if (TraceStarted(m_thd) && !*wrote_trace) {
+    Trace(m_thd) << PrintSubgraphHeader(edge, join_path, left, right);
+    *wrote_trace = true;
+  }
+
+  for (bool materialize_subqueries : {false, true}) {
+    AccessPath new_path = join_path;
+    FunctionalDependencySet filter_fd_set;
+    ApplyDelayedPredicatesAfterJoin(
+        left, right, left_path, right_path, edge->expr->join_predicate_first,
+        edge->expr->join_predicate_last, materialize_subqueries, &new_path,
+        &filter_fd_set);
+    ProposeAccessPathWithOrderings(left | right, new_fd_set | filter_fd_set,
+                                   new_obsolete_orderings, &new_path,
+                                   materialize_subqueries ? "mat. subq." : "");
+
+    if (!Overlaps(new_path.filter_predicates,
+                  m_graph->materializable_predicates)) {
+      break;
     }
   }
 }

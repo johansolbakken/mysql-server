@@ -909,8 +909,6 @@ unique_ptr_destroy_only<RowIterator> CreateIteratorFromAccessPath(
             CollectSingleRowIndexLookups(thd, path), param.join_type);
         break;
       }
-      case AccessPath::OPTIMISTIC_HASH_JOIN: // :nocheckin - TODO: Make OPTIMISTIC_HASH_JOIN its own job since it
-                                             //                    has its own union struct in AccessPath
       case AccessPath::HASH_JOIN: {
         const auto &param = path->hash_join();
         if (job.children.is_null()) {
@@ -1000,46 +998,142 @@ unique_ptr_destroy_only<RowIterator> CreateIteratorFromAccessPath(
                 ? HashJoinInput::kProbe
                 : HashJoinInput::kBuild;
 
-        // :nocheckin - TODO(johan): do a if HASH_JOIN, if OPTIMISTIC_HASH_JOIN create our own iterator
-        auto it = NewIterator<HashJoinIterator>(
-              thd, mem_root, std::move(job.children[1]),
-              GetUsedTables(param.inner, /*include_pruned_tables=*/true),
-              estimated_build_rows, std::move(job.children[0]),
-              GetUsedTables(param.outer, /*include_pruned_tables=*/true),
-              param.store_rowids, param.tables_to_get_rowid_for,
-              thd->variables.join_buff_size, std::move(conditions),
-              param.allow_spill_to_disk, join_type, *extra_conditions,
-              CollectSingleRowIndexLookups(thd, path), first_input,
-              probe_input_batch_mode, hash_table_generation);
-        if (path->type==AccessPath::HASH_JOIN) {
-          iterator = std::move(it);
-        } else if (path->type == AccessPath::OPTIMISTIC_HASH_JOIN) {
-//          ha_rows num_rows_estimate = param.child->num_output_rows() < 0.0
-//            ? HA_POS_ERROR
-//            : lrint(param.child->num_output_rows());
-          ha_rows num_rows_estimate = lrint(0);
-//          Filesort *filesort = param.filesort;
-          Filesort *filesort = nullptr;
-          auto sort_it = NewIterator<SortingIterator>(
-            thd, mem_root, filesort, std::move(job.children[0]),
-//          CollectSingleRowIndexLookups(thd, param.child),
-            CollectSingleRowIndexLookups(thd, path),
-            num_rows_estimate,
-            param.tables_to_get_rowid_for, examined_rows);
-          if (filesort->m_remove_duplicates) {
-            filesort->tables[0]->duplicate_removal_iterator =
-              down_cast<SortingIterator *>(sort_it->real_iterator());
-          } else {
-            filesort->tables[0]->sorting_iterator =
-              down_cast<SortingIterator *>(sort_it->real_iterator());
-          }
-          iterator = NewIterator<OptimisticHashJoinIterator>(thd, mem_root, std::move(it), std::move(sort_it));
-        } else {
-          // Should never happen. There are only two hash join algs.
-          assert(false);
-        }
+        iterator = NewIterator<HashJoinIterator>(
+            thd, mem_root, std::move(job.children[1]),
+            GetUsedTables(param.inner, /*include_pruned_tables=*/true),
+            estimated_build_rows, std::move(job.children[0]),
+            GetUsedTables(param.outer, /*include_pruned_tables=*/true),
+            param.store_rowids, param.tables_to_get_rowid_for,
+            thd->variables.join_buff_size, std::move(conditions),
+            param.allow_spill_to_disk, join_type, *extra_conditions,
+            CollectSingleRowIndexLookups(thd, path), first_input,
+            probe_input_batch_mode, hash_table_generation);
+
         break;
       }
+      case AccessPath::OPTIMISTIC_HASH_JOIN: {
+        const auto &param = path->optimistic_hash_join();
+        if (job.children.is_null()) {
+          SetupJobsForChildren(mem_root, param.outer, param.inner, join,
+                               /*inner_eligible_for_batch_mode=*/true, &job,
+                               &todo);
+          continue;
+        }
+        const JoinPredicate *join_predicate = param.join_predicate;
+        vector<HashJoinCondition> conditions;
+        conditions.reserve(join_predicate->expr->equijoin_conditions.size());
+        for (Item_eq_base *cond : join_predicate->expr->equijoin_conditions) {
+          conditions.emplace_back(cond, thd->mem_root);
+        }
+        const Mem_root_array<Item *> *extra_conditions =
+            GetExtraHashJoinConditions(
+                mem_root, thd->lex->using_hypergraph_optimizer(), conditions,
+                join_predicate->expr->join_conditions);
+        if (extra_conditions == nullptr) return nullptr;
+        const bool probe_input_batch_mode =
+            eligible_for_batch_mode && ShouldEnableBatchMode(param.outer);
+        double estimated_build_rows = param.inner->num_output_rows();
+        if (param.inner->num_output_rows() < 0.0) {
+          // Not all access paths may propagate their costs properly.
+          // Choose a fairly safe estimate (it's better to be too large
+          // than too small).
+          estimated_build_rows = 1048576.0;
+        }
+        JoinType join_type{JoinType::INNER};
+        switch (join_predicate->expr->type) {
+          case RelationalExpression::INNER_JOIN:
+          case RelationalExpression::STRAIGHT_INNER_JOIN:
+            join_type = JoinType::INNER;
+            break;
+          case RelationalExpression::LEFT_JOIN:
+            join_type = JoinType::OUTER;
+            break;
+          case RelationalExpression::ANTIJOIN:
+            join_type = JoinType::ANTI;
+            break;
+          case RelationalExpression::SEMIJOIN:
+            join_type =
+                param.rewrite_semi_to_inner ? JoinType::INNER : JoinType::SEMI;
+            break;
+          case RelationalExpression::TABLE:
+          default:
+            assert(false);
+        }
+        // See if we can allow the hash table to keep its contents across Init()
+        // calls.
+        //
+        // The old optimizer will sometimes push join conditions referring
+        // to outer tables (in the same query block) down in under the hash
+        // operation, so without analysis of each filter and join condition, we
+        // cannot say for sure, and thus have to turn it off. But the hypergraph
+        // optimizer sets parameter_tables properly, so we're safe if we just
+        // check that.
+        //
+        // Regardless of optimizer, we can push outer references down in under
+        // the hash, but join->hash_table_generation will increase whenever we
+        // need to recompute the query block (in JOIN::clear_hash_tables()).
+        //
+        // TODO(sgunders): The old optimizer had a concept of _when_ to clear
+        // derived tables (invalidators), and this is somehow similar. If it
+        // becomes a performance issue, consider reintroducing them.
+        //
+        // TODO(sgunders): Should this perhaps be set as a flag on the access
+        // path instead of being computed here? We do make the same checks in
+        // the cost model, so perhaps it should set the flag as well.
+        uint64_t *hash_table_generation =
+            (thd->lex->using_hypergraph_optimizer() &&
+             path->parameter_tables == 0)
+                ? &join->hash_table_generation
+                : nullptr;
+
+        // If the probe (outer) input is empty, the join result will be empty,
+        // and we do not need to read the build input. For inner join and
+        // semijoin, the converse is also true. To benefit from this, we want to
+        // start with the input where the cost of reading the first row is
+        // lowest. (We only do this for Hypergraph, as the cost data for the
+        // traditional optimizer are incomplete, and since we are reluctant to
+        // change existing behavior.) Note that we always try the probe input
+        // first for left join and antijoin.
+        const HashJoinInput first_input =
+            (thd->lex->using_hypergraph_optimizer() &&
+             param.inner->first_row_cost() > param.outer->first_row_cost())
+                ? HashJoinInput::kProbe
+                : HashJoinInput::kBuild;
+
+        // :nocheckin - TODO(johan): do a if HASH_JOIN, if OPTIMISTIC_HASH_JOIN
+        // create our own iterator
+        auto it = NewIterator<HashJoinIterator>(
+            thd, mem_root, std::move(job.children[1]),
+            GetUsedTables(param.inner, /*include_pruned_tables=*/true),
+            estimated_build_rows, std::move(job.children[0]),
+            GetUsedTables(param.outer, /*include_pruned_tables=*/true),
+            param.store_rowids, param.tables_to_get_rowid_for,
+            thd->variables.join_buff_size, std::move(conditions),
+            param.allow_spill_to_disk, join_type, *extra_conditions,
+            CollectSingleRowIndexLookups(thd, path), first_input,
+            probe_input_batch_mode, hash_table_generation);
+        ha_rows num_rows_estimate = path->num_output_rows() < 0.0
+                                        ? HA_POS_ERROR
+                                        : lrint(path->num_output_rows());
+        Filesort *filesort = param.filesort;
+        auto sort_it = NewIterator<SortingIterator>(
+            thd, mem_root, filesort, std::move(job.children[0]),
+            CollectSingleRowIndexLookups(thd, path), num_rows_estimate,
+            param.tables_to_get_rowid_for, examined_rows);
+        if (filesort->m_remove_duplicates) {
+          filesort->tables[0]->duplicate_removal_iterator =
+              down_cast<SortingIterator *>(sort_it->real_iterator());
+        } else {
+          filesort->tables[0]->sorting_iterator =
+              down_cast<SortingIterator *>(sort_it->real_iterator());
+        }
+
+
+        iterator = NewIterator<OptimisticHashJoinIterator>(
+            thd, mem_root, std::move(it), std::move(sort_it));
+        break;
+      }
+
       case AccessPath::FILTER: {
         const auto &param = path->filter();
         if (job.children.is_null()) {
