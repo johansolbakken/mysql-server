@@ -4994,6 +4994,11 @@ void CostingReceiver::ProposeHashJoin(
     return;
   }
 
+  // NOTE(johan): Always propose optimistic hash join when proposing hash join
+  ProposeOptimisticHashJoin(left, right, left_path, right_path, edge,
+                            new_fd_set, new_obsolete_orderings,
+                            rewrite_semi_to_inner, wrote_trace);
+
   // If semijoin strategy, loose scan is forced, but the current plan
   // is to not choose loose scan, we dont need to propose any plan now.
   // However, loose scan is not possible for all cases. So we check here
@@ -5205,6 +5210,11 @@ bool CostingReceiver::AllowOptimisticHashJoin(NodeMap left, NodeMap right,
     return false;
   }
 
+  // Do not allow optimsitic hash join if there is not sort order on left path.
+  if (left_path.ordering_state == 0) {
+    return false;
+  }
+
   // TODO: :nocheckin Allow optimistic hash join if probe table has sorting and build table
   //       can be estimated to fit in memory = true
 
@@ -5412,7 +5422,9 @@ void CostingReceiver::ProposeOptimisticHashJoin(
   join_path.delayed_predicates = join_path.delayed_predicates;
   join_path.optimistic_hash_join().filesort = nullptr;
   join_path.optimistic_hash_join().tables_to_get_rowid_for = 0;
-  // join_path.optimistic_hash_join().order = order;
+  join_path.optimistic_hash_join().order = BuildSortAheadOrdering(
+      m_thd, m_orderings,
+      ReduceFinalOrdering(m_thd, *m_orderings, left_path->ordering_state));
   join_path.optimistic_hash_join().remove_duplicates = false;
   join_path.optimistic_hash_join().unwrap_rollup = true;
   join_path.optimistic_hash_join().limit = HA_POS_ERROR;

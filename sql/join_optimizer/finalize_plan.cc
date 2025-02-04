@@ -835,6 +835,29 @@ void FinalizeSortPaths(THD *thd, AccessPath *root_path, JOIN *join) {
       /*post_order_traversal=*/false);
 }
 
+void FinalizeOptimisticHashJoinPaths(THD *thd, AccessPath *root_path, JOIN *join) {
+  WalkAccessPaths(
+      root_path, join, WalkAccessPathPolicy::ENTIRE_QUERY_BLOCK,
+      [&](AccessPath *path, JOIN *) {
+        if (path->type == AccessPath::OPTIMISTIC_HASH_JOIN) {
+          assert(path->optimistic_hash_join().filesort == nullptr);
+          path->optimistic_hash_join().filesort = new (thd->mem_root) Filesort(
+              thd, CollectTables(thd, path),
+              /*keep_buffers=*/false, path->optimistic_hash_join().order, path->optimistic_hash_join().limit,
+              path->optimistic_hash_join().remove_duplicates, path->optimistic_hash_join().force_sort_rowids,
+              path->optimistic_hash_join().unwrap_rollup);
+          join->filesorts_to_cleanup.push_back(path->optimistic_hash_join().filesort);
+          if (!path->optimistic_hash_join().filesort->using_addon_fields()) {
+            // This Filesort uses row IDs. Make sure row IDs are made available
+            // in the paths below.
+            FindTablesToGetRowidFor(path);
+          }
+        }
+        return false;
+      },
+      /*post_order_traversal=*/false);
+}
+
 }  // namespace
 
 /*
@@ -1010,6 +1033,7 @@ bool FinalizePlanForQueryBlock(THD *thd, Query_block *query_block) {
   if (error) return true;
 
   FinalizeSortPaths(thd, root_path, join);
+  FinalizeOptimisticHashJoinPaths(thd, root_path, join);
 
   return join->push_to_engines();
 }
