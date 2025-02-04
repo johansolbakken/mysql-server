@@ -10,7 +10,7 @@ bool OptimisticHashJoinIterator::Init(){
   if(m_hash_join->Init()) {
     return true;
   }
-  if (m_sort->Init()) {
+  if (false && m_sort->Init()) {
       return true;
   }
   return false;
@@ -18,4 +18,8 @@ bool OptimisticHashJoinIterator::Init(){
 
 int OptimisticHashJoinIterator::Read(){
   return m_hash_join->Read();
+}
+
+bool OptimisticHashJoinIterator::WentOnDisk() const {
+  return down_cast<const HashJoinIterator*>(m_hash_join->real_iterator())->WentOnDisk();
 }

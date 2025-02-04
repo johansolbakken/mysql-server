@@ -1117,7 +1117,7 @@ unique_ptr_destroy_only<RowIterator> CreateIteratorFromAccessPath(
                                         : lrint(path->num_output_rows());
         Filesort *filesort = param.filesort;
         auto sort_it = NewIterator<SortingIterator>(
-            thd, mem_root, filesort, std::move(job.children[0]),
+            thd, mem_root, filesort, nullptr,
             CollectSingleRowIndexLookups(thd, path), num_rows_estimate,
             param.tables_to_get_rowid_for, examined_rows);
         if (filesort->m_remove_duplicates) {

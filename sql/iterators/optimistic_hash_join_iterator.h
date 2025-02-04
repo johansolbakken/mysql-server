@@ -42,6 +42,8 @@ class OptimisticHashJoinIterator final : public RowIterator {
 
   [[nodiscard]] const RowIterator* hash_join_iterator() const { return m_hash_join->real_iterator(); }
 
+  [[nodiscard]] bool WentOnDisk() const;
+
 private:
   const unique_ptr_destroy_only<RowIterator> m_hash_join;
   const unique_ptr_destroy_only<RowIterator> m_sort;

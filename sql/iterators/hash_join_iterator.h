@@ -362,9 +362,7 @@ class HashJoinIterator final : public RowIterator {
 
   int ChunkCount() { return m_chunk_files_on_disk.size(); }
 
-  [[nodiscard]] bool WentOnDisk() const { return m_hash_join_type == HashJoinType::SPILL_TO_DISK; }
-  [[nodiscard]] bool WasInMemory() const { return m_hash_join_type == HashJoinType::IN_MEMORY; }
-
+  [[nodiscard]] bool WentOnDisk() const { return on_disk_hash_join(); }
 
  private:
   /// Read all rows from the build input and store the rows into the in-memory
