@@ -4990,14 +4990,14 @@ void CostingReceiver::ProposeHashJoin(
   assert(BitsetsAreCommitted(left_path));
   assert(BitsetsAreCommitted(right_path));
 
-  if (!AllowHashJoin(left, right, *left_path, *right_path, *edge)) {
-    return;
-  }
-
   // NOTE(johan): Always propose optimistic hash join when proposing hash join
   ProposeOptimisticHashJoin(left, right, left_path, right_path, edge,
                             new_fd_set, new_obsolete_orderings,
                             rewrite_semi_to_inner, wrote_trace);
+
+  if (!AllowHashJoin(left, right, *left_path, *right_path, *edge)) {
+    return;
+  }
 
   // If semijoin strategy, loose scan is forced, but the current plan
   // is to not choose loose scan, we dont need to propose any plan now.
