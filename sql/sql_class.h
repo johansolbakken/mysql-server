@@ -4871,6 +4871,8 @@ class THD : public MDL_context_owner,
 
   /// Count of Regular Statement Handles in use.
   unsigned short m_regular_statement_handle_count{0};
+
+  bool disable_optimistic_hash_join = false;
 };
 
 /**

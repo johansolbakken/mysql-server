@@ -145,6 +145,8 @@ static bool parse_int(longlong *to, const char *from, size_t from_length)
   here, but that creates conflicts in gen_lex_token.cc. See comments there.
 */
 
+%token DISABLE_OPTIMISTIC_HASH_JOIN_HINT 1051
+
 /*
   Please add new tokens right above this line.
 
@@ -167,6 +169,7 @@ static bool parse_int(longlong *to, const char *from, size_t from_length)
   qb_name_hint
   set_var_hint
   resource_group_hint
+  disable_optimistic_hash_join_hint
 
 %type <hint_list> hint_list
 
@@ -232,6 +235,16 @@ hint_list:
           }
         ;
 
+disable_optimistic_hash_join_hint:
+      DISABLE_OPTIMISTIC_HASH_JOIN_HINT { /* discard token’s value */ }
+      {
+          $$ = NEW_PTN PT_hint_disable_optimistic_hash_join();
+          if ($$ == NULL)
+              YYABORT; // OOM
+      }
+;
+
+
 hint:
           index_level_hint
         | table_level_hint
@@ -240,6 +253,7 @@ hint:
         | max_execution_time_hint
         | set_var_hint
         | resource_group_hint
+        | disable_optimistic_hash_join_hint
         ;
 
 

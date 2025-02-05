@@ -352,4 +352,13 @@ class PT_hint_resource_group : public PT_hint {
   }
 };
 
+class PT_hint_disable_optimistic_hash_join : public PT_hint {
+public:
+    PT_hint_disable_optimistic_hash_join()
+        : PT_hint(DISABLE_OPTIMISTIC_HASH_JOIN_HINT_ENUM, false) { }
+
+    bool do_contextualize(Parse_context *pc) override;
+};
+
+
 #endif /* PARSE_TREE_HINTS_INCLUDED */

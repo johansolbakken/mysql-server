@@ -5205,6 +5205,10 @@ bool CostingReceiver::AllowOptimisticHashJoin(NodeMap left, NodeMap right,
                                               const AccessPath &left_path,
                                               const AccessPath &right_path,
                                               const JoinPredicate &edge) const {
+  if (m_thd->disable_optimistic_hash_join) {
+    return false;
+  }
+
   if (!AllowHashJoin(left, right, left_path, right_path, edge)) {
     return false;
   }

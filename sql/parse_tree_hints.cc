@@ -584,3 +584,9 @@ bool PT_hint_resource_group::do_contextualize(Parse_context *pc) {
       ->m_switch_resource_group_str[m_resource_group_name.length] = '\0';
   return false;
 }
+
+bool PT_hint_disable_optimistic_hash_join::do_contextualize(Parse_context *pc) {
+    // Assuming that THD has a flag named disable_optimistic_hash_join:
+    pc->thd->disable_optimistic_hash_join = true;
+    return false;
+}
