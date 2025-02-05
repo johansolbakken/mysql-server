@@ -1180,13 +1180,7 @@ struct AccessPath {
       table_map tables_to_get_rowid_for;
 
       // Taken from sort;
-      // AccessPath *child;
       Filesort *filesort;
-      // table_map tables_to_get_rowid_for;
-
-      // If filesort is nullptr: A new filesort will be created at the
-      // end of optimization, using this order and flags. Otherwise: Only
-      // used by EXPLAIN.
       ORDER *order;
       ha_rows limit;
       bool remove_duplicates;

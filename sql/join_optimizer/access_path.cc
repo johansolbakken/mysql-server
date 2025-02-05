@@ -1008,7 +1008,6 @@ unique_ptr_destroy_only<RowIterator> CreateIteratorFromAccessPath(
             param.allow_spill_to_disk, join_type, *extra_conditions,
             CollectSingleRowIndexLookups(thd, path), first_input,
             probe_input_batch_mode, hash_table_generation);
-
         break;
       }
       case AccessPath::OPTIMISTIC_HASH_JOIN: {

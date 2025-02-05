@@ -857,7 +857,6 @@ void FinalizeOptimisticHashJoinPaths(THD *thd, AccessPath *root_path, JOIN *join
       },
       /*post_order_traversal=*/false);
 }
-
 }  // namespace
 
 /*

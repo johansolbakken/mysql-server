@@ -577,7 +577,6 @@ static unique_ptr<Json_object> ExplainMaterializeAccessPath(
 
   error |= AddMemberToObject<Json_string>(obj, "operation", str);
 
-
   /* Move the Materialize to the bottom of its table path, and return a new
    * object for this table path.
    */
@@ -1096,7 +1095,6 @@ static bool AddPathCosts(const AccessPath *path,
     int num_init_calls = 0;
 
     if (path->iterator != nullptr) {
-      // :nocheckin - Here we set "actual" values
       if (path->type == AccessPath::HASH_JOIN) {
         const auto *iterator = dynamic_cast<const HashJoinIterator*>(path->iterator->real_iterator());
         error |= AddMemberToObject<Json_boolean>(
@@ -2587,11 +2585,9 @@ void Explain_format_tree::ExplainPrintCosts(const Json_object *obj,
     // Output extra information about hash join
     ExplainPrintWentOnDisk(obj, explain);
   }
-
   *explain += "\n";
 }
 
-// :nocheckin - This is where we print
 void Explain_format_tree::ExplainPrintWentOnDisk(const Json_object *obj,
                                                  string *explain) {
   std::stringstream ss;
@@ -2608,7 +2604,6 @@ void Explain_format_tree::ExplainPrintWentOnDisk(const Json_object *obj,
 
   *explain += ss.str();
 }
-
 
 void Explain_format_tree::ExplainPrintOptimisticHashJoin(const Json_object *obj,
                                                          std::string* explain) {

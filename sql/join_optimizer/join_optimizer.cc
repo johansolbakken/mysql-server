@@ -5105,12 +5105,11 @@ void CostingReceiver::ProposeHashJoin(
 
   double estimated_bytes_per_row = edge->estimated_bytes_per_row;
 
-  // If the edge is part of a cycle in the hypergraph, there may be other
-  // usable join predicates in other edges.
-  // MoveFilterPredicatesIntoHashJoinCondition() will widen the hash join
-  // predicate in that case, so account for that here. Only relevant when
-  // joining more than two tables. Say {t1,t2} HJ {t3}, which could be joined
-  // both along a t1-t3 edge and a t2-t3 edge.
+  // If the edge is part of a cycle in the hypergraph, there may be other usable
+  // join predicates in other edges. MoveFilterPredicatesIntoHashJoinCondition()
+  // will widen the hash join predicate in that case, so account for that here.
+  // Only relevant when joining more than two tables. Say {t1,t2} HJ {t3}, which
+  // could be joined both along a t1-t3 edge and a t2-t3 edge.
   //
   // TODO(khatlen): The cost is still calculated as if the hash join only uses
   // "edge", and that the alternative edges are put in filters on top of the
