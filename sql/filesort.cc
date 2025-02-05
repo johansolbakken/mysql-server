@@ -367,7 +367,7 @@ static void trace_filesort_information(Opt_trace_context *trace,
 bool filesort(THD *thd, Filesort *filesort, RowIterator *source_iterator,
               table_map tables_to_get_rowid_for, ha_rows num_rows_estimate,
               Filesort_info *fs_info, Sort_result *sort_result,
-              ha_rows *found_rows) {
+              ha_rows *found_rows, bool should_init_source) {
   int error;
   const ulong memory_available = thd->variables.sortbuff_size;
   ha_rows num_rows_found = HA_POS_ERROR;
@@ -406,7 +406,7 @@ bool filesort(THD *thd, Filesort *filesort, RowIterator *source_iterator,
   // since table->file (and in particular, ref_length) may not be initialized
   // before that.
   DBUG_EXECUTE_IF("bug14365043_1", DBUG_SET("+d,ha_rnd_init_fail"););
-  if (source_iterator->Init()) {
+  if (should_init_source && source_iterator->Init()) {
     return true;
   }
 

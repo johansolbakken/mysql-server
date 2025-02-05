@@ -104,7 +104,7 @@ class Filesort {
 bool filesort(THD *thd, Filesort *filesort, RowIterator *source_iterator,
               table_map tables_to_get_rowid_for, ha_rows num_rows_estimate,
               Filesort_info *fs_info, Sort_result *sort_result,
-              ha_rows *found_rows);
+              ha_rows *found_rows, bool should_init_source=true);
 void filesort_free_buffers(TABLE *table, bool full);
 void change_double_for_sort(double nr, uchar *to);
 

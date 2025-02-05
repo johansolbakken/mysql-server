@@ -26,13 +26,19 @@ class OptimisticHashJoinIterator final : public RowIterator {
   int Read() override;
 
   void SetNullRowFlag(bool is_null_row) override {
-    m_hash_join->SetNullRowFlag(is_null_row);
-    m_sort->SetNullRowFlag(is_null_row);
+    if (!m_hash_join_is_moved) {
+      m_hash_join->SetNullRowFlag(is_null_row);
+    } else {
+      m_sort->SetNullRowFlag(is_null_row);
+    }
   }
 
   void EndPSIBatchModeIfStarted() override {
-    m_hash_join->EndPSIBatchModeIfStarted();
-    m_sort->EndPSIBatchModeIfStarted();
+    if (!m_hash_join_is_moved) {
+      m_hash_join->EndPSIBatchModeIfStarted();
+    } else {
+      m_sort->EndPSIBatchModeIfStarted();
+    }
   }
 
   void UnlockRow() override {
@@ -45,8 +51,10 @@ class OptimisticHashJoinIterator final : public RowIterator {
   [[nodiscard]] bool WentOnDisk() const;
 
 private:
-  const unique_ptr_destroy_only<RowIterator> m_hash_join;
-  const unique_ptr_destroy_only<RowIterator> m_sort;
+  bool m_hash_join_is_moved = false;
+  unique_ptr_destroy_only<RowIterator> m_hash_join;
+  unique_ptr_destroy_only<RowIterator> m_sort;
+  unique_ptr_destroy_only<RowIterator>* m_read_iterator = nullptr;
 };
 
 #endif  // SQL_ITERATORS_OPTIMISTIC_HASH_JOIN_ITERATOR_H_

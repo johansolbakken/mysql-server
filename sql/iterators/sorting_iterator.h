@@ -105,6 +105,9 @@ class SortingIterator final : public RowIterator {
 
   const Filesort *filesort() const { return m_filesort; }
 
+  void SetSourceIterator(unique_ptr_destroy_only<RowIterator>&& iterator) { m_source_iterator = std::move(iterator); }
+  void DoNotInitSource() { m_should_init_source = false; }
+
  private:
   int DoSort();
   void ReleaseBuffers();
@@ -115,6 +118,7 @@ class SortingIterator final : public RowIterator {
   // after Init() is done, but we may read from the TABLE it wraps,
   // so we don't destroy it until our own destructor.
   unique_ptr_destroy_only<RowIterator> m_source_iterator;
+  bool m_should_init_source = true;
 
   // The actual iterator of sorted records, populated in Init();
   // Read() only proxies to this. Always points to one of the members
