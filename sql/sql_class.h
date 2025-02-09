@@ -4873,6 +4873,7 @@ class THD : public MDL_context_owner,
   unsigned short m_regular_statement_handle_count{0};
 
   bool disable_optimistic_hash_join = false;
+  double optimism_level = 1.0; // [0, 1]
 };
 
 /**

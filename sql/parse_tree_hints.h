@@ -360,5 +360,16 @@ public:
     bool do_contextualize(Parse_context *pc) override;
 };
 
+class PT_hint_set_optimism_level : public PT_hint {
+public:
+    PT_hint_set_optimism_level(double level)
+        : PT_hint(SET_OPTIMISM_LEVEL_HINT_ENUM, true), m_level(level) { }
+
+    bool do_contextualize(Parse_context *pc) override;
+
+  private:
+    double m_level = 0.0;
+};
+
 
 #endif /* PARSE_TREE_HINTS_INCLUDED */

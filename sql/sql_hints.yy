@@ -61,6 +61,36 @@ static bool parse_int(longlong *to, const char *from, size_t from_length)
   return error != 0 || end != from + from_length;
 }
 
+#include <cerrno>
+#include <cstring>
+
+static bool parse_double(double *to, const char *from, size_t from_length)
+{
+    // Create a temporary buffer and null-terminate it
+    char buffer[64];
+    if (from_length >= sizeof(buffer)) {
+        char *buf = new char[from_length + 1];
+        memcpy(buf, from, from_length);
+        buf[from_length] = '\0';
+        errno = 0;
+        char *end;
+        double val = strtod(buf, &end);
+        bool error = (errno != 0 || end != buf + from_length);
+        delete [] buf;
+        *to = val;
+        return error;
+    } else {
+        memcpy(buffer, from, from_length);
+        buffer[from_length] = '\0';
+        errno = 0;
+        char *end;
+        double val = strtod(buffer, &end);
+        bool error = (errno != 0 || end != buffer + from_length);
+        *to = val;
+        return error;
+    }
+}
+
 // ODR violation here as well, so rename yysymbol_kind_t
 #define yysymbol_kind_t my_hint_parser_symbol_kind_t
 
@@ -146,6 +176,7 @@ static bool parse_int(longlong *to, const char *from, size_t from_length)
 */
 
 %token DISABLE_OPTIMISTIC_HASH_JOIN_HINT 1051
+%token SET_OPTIMISM_LEVEL_HINT 1052
 
 /*
   Please add new tokens right above this line.
@@ -170,6 +201,7 @@ static bool parse_int(longlong *to, const char *from, size_t from_length)
   set_var_hint
   resource_group_hint
   disable_optimistic_hash_join_hint
+  set_optimism_level_hint
 
 %type <hint_list> hint_list
 
@@ -244,6 +276,16 @@ disable_optimistic_hash_join_hint:
       }
 ;
 
+set_optimism_level_hint:
+      SET_OPTIMISM_LEVEL_HINT '(' HINT_ARG_FLOATING_POINT_NUMBER ')' {
+          double level;
+          if (parse_double(&level, $3.str, $3.length))
+             YYABORT; // conversion failed or OOM
+          $$ = NEW_PTN PT_hint_set_optimism_level(level);
+          if ($$ == NULL)
+              YYABORT; // OOM
+      }
+;
 
 hint:
           index_level_hint
@@ -254,6 +296,7 @@ hint:
         | set_var_hint
         | resource_group_hint
         | disable_optimistic_hash_join_hint
+        | set_optimism_level_hint
         ;
 
 

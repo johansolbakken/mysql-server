@@ -228,6 +228,7 @@ void Hint_scanner::add_hint_token_digest() {
           case DERIVED_CONDITION_PUSHDOWN_HINT:
           case NO_DERIVED_CONDITION_PUSHDOWN_HINT:
           case DISABLE_OPTIMISTIC_HASH_JOIN_HINT:
+          case SET_OPTIMISM_LEVEL_HINT:
             break;
           default:
             assert(false);
