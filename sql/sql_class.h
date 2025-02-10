@@ -114,9 +114,11 @@
 #include "sql/xa.h"
 #include "sql_event_tracking_to_audit_event_mapping.h"
 #include "sql_string.h"
+#include "sql/optimism/optimism.h"
 #include "template_utils.h"
 #include "thr_lock.h"
 #include "violite.h"
+
 
 enum enum_check_fields : int;
 enum enum_tx_isolation : int;
@@ -4874,6 +4876,7 @@ class THD : public MDL_context_owner,
 
   bool disable_optimistic_hash_join = false;
   double optimism_level = 1.0; // [0, 1]
+  OptimismFunc optimism_func = OptimismFunc::NONE;
 };
 
 /**

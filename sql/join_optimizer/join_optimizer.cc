@@ -96,6 +96,7 @@
 #include "sql/olap.h"
 #include "sql/opt_costmodel.h"
 #include "sql/opt_hints.h"
+#include "sql/optimism/optimism.h"
 #include "sql/parse_tree_node_base.h"
 #include "sql/partition_info.h"
 #include "sql/query_options.h"
@@ -5218,8 +5219,28 @@ bool CostingReceiver::AllowOptimisticHashJoin(NodeMap left, NodeMap right,
     return false;
   }
 
-  // TODO: :nocheckin Allow optimistic hash join if probe table has sorting and build table
-  //       can be estimated to fit in memory = true
+  // TODO: :nocheckin find these values
+  auto optimism_level = m_thd->optimism_level;
+  auto row_width = 0;
+  auto cardinality_build = right_path.num_output_rows();
+  auto join_buffer_size = 0;
+
+  switch (m_thd->optimism_func) {
+    case OptimismFunc::LINEAR:
+      assert(false && "not implemented!");
+      break;
+    case OptimismFunc::CLAMPED:
+      assert(false && "not implemented!");
+      break;
+    case OptimismFunc::SIGMOID:
+      assert(false && "not implemented!");
+      break;
+    case OptimismFunc::EXPONENTIAL:
+      assert(false && "not implemented!");
+      break;
+    case OptimismFunc::NONE:
+      break;
+  }
 
   return true;
 }
