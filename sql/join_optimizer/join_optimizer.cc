@@ -5219,11 +5219,10 @@ bool CostingReceiver::AllowOptimisticHashJoin(NodeMap left, NodeMap right,
     return false;
   }
 
-  // TODO: :nocheckin find these values
   double optimism_level = m_thd->optimism_level;
-  double row_width = 0;
+  double row_width = edge.estimated_bytes_per_row;
   double cardinality_build = right_path.num_output_rows();
-  double join_buffer_size = 0;
+  double join_buffer_size = static_cast<double>(m_thd->variables.join_buff_size);
 
   switch (m_thd->optimism_func) {
     case OptimismFunc::LINEAR: {
