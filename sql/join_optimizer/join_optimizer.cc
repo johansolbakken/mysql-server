@@ -5220,24 +5220,31 @@ bool CostingReceiver::AllowOptimisticHashJoin(NodeMap left, NodeMap right,
   }
 
   // TODO: :nocheckin find these values
-  auto optimism_level = m_thd->optimism_level;
-  auto row_width = 0;
-  auto cardinality_build = right_path.num_output_rows();
-  auto join_buffer_size = 0;
+  double optimism_level = m_thd->optimism_level;
+  double row_width = 0;
+  double cardinality_build = right_path.num_output_rows();
+  double join_buffer_size = 0;
 
   switch (m_thd->optimism_func) {
-    case OptimismFunc::LINEAR:
-      assert(false && "not implemented!");
-      break;
-    case OptimismFunc::CLAMPED:
-      assert(false && "not implemented!");
-      break;
-    case OptimismFunc::SIGMOID:
-      assert(false && "not implemented!");
-      break;
-    case OptimismFunc::EXPONENTIAL:
-      assert(false && "not implemented!");
-      break;
+    case OptimismFunc::LINEAR: {
+      auto lhs = (1.0-optimism_level) * row_width * cardinality_build;
+      auto rhs = join_buffer_size * optimism_level;
+      return lhs < rhs;
+    }
+    case OptimismFunc::CLAMPED: {
+      auto lhs = std::max(
+          0.0, std::min(1.0, row_width * cardinality_build / join_buffer_size));
+      return lhs <= optimism_level;
+    }
+    case OptimismFunc::SIGMOID: {
+      auto x = row_width * cardinality_build / join_buffer_size;
+      auto lhs = 1.0 / (1.0 + std::exp(-x));
+      return lhs <= optimism_level;
+    }
+    case OptimismFunc::EXPONENTIAL: {
+      auto lhs = cardinality_build * row_width * std::exp(-optimism_level);
+      return lhs < join_buffer_size;
+    }
     case OptimismFunc::NONE:
       break;
   }
