@@ -37,6 +37,7 @@
 #include "sql/derror.h"
 #include "sql/item_subselect.h"
 #include "sql/mysqld.h"  // table_alias_charset
+#include "sql/optimism/optimism.h"
 #include "sql/parse_tree_helpers.h"
 #include "sql/query_options.h"
 #include "sql/resourcegroups/resource_group_basic_types.h"
@@ -594,4 +595,9 @@ bool PT_hint_disable_optimistic_hash_join::do_contextualize(Parse_context *pc) {
 bool PT_hint_set_optimism_level::do_contextualize(Parse_context *pc) {
     pc->thd->optimism_level = m_level;
     return false;
+}
+
+bool PT_hint_set_optimism_func::do_contextualize(Parse_context *pc) {
+  pc->thd->optimism_func = m_func;
+  return false;
 }

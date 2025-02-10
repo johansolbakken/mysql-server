@@ -371,5 +371,17 @@ public:
     double m_level = 0.0;
 };
 
+class PT_hint_set_optimism_func : public PT_hint {
+public:
+    PT_hint_set_optimism_func(OptimismFunc func)
+        : PT_hint(SET_OPTIMISM_FUNC_HINT_ENUM, true), m_func(func) { }
+
+    bool do_contextualize(Parse_context *pc) override;
+
+  private:
+    OptimismFunc m_func = OptimismFunc::NONE;
+};
+
+
 
 #endif /* PARSE_TREE_HINTS_INCLUDED */

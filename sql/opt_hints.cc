@@ -88,6 +88,7 @@ struct st_opt_hint_info opt_hint_info[] = {
     {"DERIVED_CONDITION_PUSHDOWN", true, true, false},
     {"DISABLE_OPTIMISTIC_HASH_JOIN", false, false, false},
     {"SET_OPTIMISM_LEVEL", true, true, false},
+    {"SET_OPTIMISM_FUNC", true, true, false},
     {nullptr, false, false, false}};
 
 /**

@@ -177,6 +177,7 @@ static bool parse_double(double *to, const char *from, size_t from_length)
 
 %token DISABLE_OPTIMISTIC_HASH_JOIN_HINT 1051
 %token SET_OPTIMISM_LEVEL_HINT 1052
+%token SET_OPTIMISM_FUNC_HINT 1053
 
 /*
   Please add new tokens right above this line.
@@ -202,6 +203,9 @@ static bool parse_double(double *to, const char *from, size_t from_length)
   resource_group_hint
   disable_optimistic_hash_join_hint
   set_optimism_level_hint
+  set_optimism_func_hint
+
+%type <num> optimizer_func
 
 %type <hint_list> hint_list
 
@@ -287,6 +291,36 @@ set_optimism_level_hint:
       }
 ;
 
+set_optimism_func_hint:
+      SET_OPTIMISM_FUNC_HINT '(' optimizer_func ')'
+      {
+          $$ = NEW_PTN PT_hint_set_optimism_func((OptimismFunc)$3);
+          if ($$ == nullptr)
+              YYABORT; // OOM
+      }
+      ;
+
+optimizer_func:
+      HINT_ARG_IDENT
+      {
+          if (strcasecmp($1.str, "NONE") == 0)
+              $$ = static_cast<int>(OptimismFunc::NONE);
+          else if (strcasecmp($1.str, "LINEAR") == 0)
+              $$ = static_cast<int>(OptimismFunc::LINEAR);
+          else if (strcasecmp($1.str, "CLAMPED") == 0)
+              $$ = static_cast<int>(OptimismFunc::CLAMPED);
+          else if (strcasecmp($1.str, "SIGMOID") == 0)
+              $$ = static_cast<int>(OptimismFunc::SIGMOID);
+          else if (strcasecmp($1.str, "EXPONENTIAL") == 0)
+              $$ = static_cast<int>(OptimismFunc::EXPONENTIAL);
+          else
+          {
+              scanner->syntax_warning(ER_THD(thd, ER_UNKNOWN_OPTIMISM_FUNC));
+              YYABORT;
+          }
+      }
+      ;
+
 hint:
           index_level_hint
         | table_level_hint
@@ -297,6 +331,7 @@ hint:
         | resource_group_hint
         | disable_optimistic_hash_join_hint
         | set_optimism_level_hint
+        | set_optimism_func_hint
         ;
 
 
