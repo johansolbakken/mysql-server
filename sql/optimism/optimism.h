@@ -1,10 +1,12 @@
 #pragma once
 
+#include <string>
+
 enum class OptimismFunc {
   NONE, LINEAR, CLAMPED, SIGMOID, EXPONENTIAL 
 };
 
-inline const char *OptimismFuncToString(OptimismFunc optimismFunc) {
+inline std::string OptimismFuncToString(OptimismFunc optimismFunc) {
   switch (optimismFunc) {
     case OptimismFunc::NONE:
       return "NONE";

@@ -1091,7 +1091,7 @@ static bool AddPathCosts(const AccessPath *path,
       path->type == AccessPath::OPTIMISTIC_HASH_JOIN);
   error |= AddMemberToObject<Json_double>(obj, "optimism_level",
                                           current_thd->optimism_level);
-  error |= AddMemberToObject<Json_string>(obj, "optimism_function",
+  error |= AddMemberToObject<Json_string>(obj, "optimism_func",
                                           OptimismFuncToString(current_thd->optimism_func));
 
   /* Add analyze figures */
@@ -2626,15 +2626,17 @@ void Explain_format_tree::ExplainPrintOptimisticHashJoin(const Json_object *obj,
           ->value();
 
   if (was_optimistic_hash_join) {
-    ss << "  (optimistic hash join!)";
+    ss << "  (optimistic hash join";
 
     auto optimism_level =
         down_cast<const Json_double *>(obj->get("optimism_level"))->value();
-    ss << " (optimism_level=" << optimism_level << ")";
+    ss << ", o_level=" << optimism_level;
 
     auto optimism_func = 
         down_cast<const Json_string *>(obj->get("optimism_func"))->value();
-    ss << " (optimism_func=" << optimism_func << ")";
+    ss << ", o_func=" << optimism_func;
+
+    ss << ")";
   }
 
   *explain += ss.str();
