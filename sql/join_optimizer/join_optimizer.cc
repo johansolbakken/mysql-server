@@ -5202,6 +5202,29 @@ void CostingReceiver::ProposeHashJoin(
   }
 }
 
+size_t EstimateRowWidthForHashJoin(const JoinHypergraph &graph, NodeMap right_nodes) {
+  // Start with the size of the join key(s) as before.
+  size_t ret = 0;
+
+  // Iterate over each node (table) that is part of the right side.
+  for (int node_idx : BitsSetIn(right_nodes)) {
+    const TABLE *table = graph.nodes[node_idx].table();
+    // Loop over each field in the table that is marked for reading.
+    for (uint i = 0; i < table->s->fields; ++i) {
+      if (bitmap_is_set(table->read_set, i)) {
+        Field *field = table->field[i];
+        // Heuristically limit each field’s contribution to kMaxItemLengthEstimate.
+        ret += std::min<size_t>(field->max_data_length(), kMaxItemLengthEstimate);
+      }
+    }
+  }
+
+  // Add a fixed overhead (for example, for hash table bookkeeping).
+  ret += 20;
+
+  return ret;
+}
+
 bool CostingReceiver::AllowOptimisticHashJoin(NodeMap left, NodeMap right,
                                               const AccessPath &left_path,
                                               const AccessPath &right_path,
@@ -5220,7 +5243,7 @@ bool CostingReceiver::AllowOptimisticHashJoin(NodeMap left, NodeMap right,
   }
 
   double optimism_level = m_thd->optimism_level;
-  double row_width = edge.estimated_bytes_per_row;
+  double row_width = EstimateRowWidthForHashJoin(*m_graph, right);
   double cardinality_build = right_path.num_output_rows();
   double join_buffer_size = static_cast<double>(m_thd->variables.join_buff_size);
 
