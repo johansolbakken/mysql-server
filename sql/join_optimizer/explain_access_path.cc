@@ -1087,11 +1087,12 @@ static bool AddPathCosts(const AccessPath *path,
   } /* if (path->num_output_rows() >= 0.0) */
 
   error |= AddMemberToObject<Json_boolean>(
-            obj, "was_optimistic_hash_join",
-            path->type == AccessPath::OPTIMISTIC_HASH_JOIN);
-  error |= AddMemberToObject<Json_double>(
-            obj, "optimism_level",
-            current_thd->optimism_level);
+      obj, "was_optimistic_hash_join",
+      path->type == AccessPath::OPTIMISTIC_HASH_JOIN);
+  error |= AddMemberToObject<Json_double>(obj, "optimism_level",
+                                          current_thd->optimism_level);
+  error |= AddMemberToObject<Json_string>(obj, "optimism_function",
+                                          OptimismFuncToString(current_thd->optimism_func));
 
   /* Add analyze figures */
   if (explain_analyze) {
@@ -1099,16 +1100,16 @@ static bool AddPathCosts(const AccessPath *path,
 
     if (path->iterator != nullptr) {
       if (path->type == AccessPath::HASH_JOIN) {
-        const auto *iterator = dynamic_cast<const HashJoinIterator*>(path->iterator->real_iterator());
-        error |= AddMemberToObject<Json_boolean>(
-          obj, "went_on_disk",
-          iterator->WentOnDisk());
+        const auto *iterator = dynamic_cast<const HashJoinIterator *>(
+            path->iterator->real_iterator());
+        error |= AddMemberToObject<Json_boolean>(obj, "went_on_disk",
+                                                 iterator->WentOnDisk());
 
       } else if (path->type == AccessPath::OPTIMISTIC_HASH_JOIN) {
-        const auto *iterator = dynamic_cast<const OptimisticHashJoinIterator*>(path->iterator->real_iterator());
-        error |= AddMemberToObject<Json_boolean>(
-            obj, "went_on_disk",
-            iterator->WentOnDisk());
+        const auto *iterator = dynamic_cast<const OptimisticHashJoinIterator *>(
+            path->iterator->real_iterator());
+        error |= AddMemberToObject<Json_boolean>(obj, "went_on_disk",
+                                                 iterator->WentOnDisk());
       }
 
       const IteratorProfiler *const profiler = path->iterator->GetProfiler();
@@ -1553,10 +1554,12 @@ static unique_ptr<Json_object> SetObjectMembers(
       break;
     }
     case AccessPath::OPTIMISTIC_HASH_JOIN: {
-      const JoinPredicate *predicate = path->optimistic_hash_join().join_predicate;
-      RelationalExpression::Type type = path->optimistic_hash_join().rewrite_semi_to_inner
-                                            ? RelationalExpression::INNER_JOIN
-                                            : predicate->expr->type;
+      const JoinPredicate *predicate =
+          path->optimistic_hash_join().join_predicate;
+      RelationalExpression::Type type =
+          path->optimistic_hash_join().rewrite_semi_to_inner
+              ? RelationalExpression::INNER_JOIN
+              : predicate->expr->type;
       THD *const thd = current_thd;
 
       string json_join_type;
@@ -1566,7 +1569,8 @@ static unique_ptr<Json_object> SetObjectMembers(
                                                 "firstmatch");
       }
       if (path->optimistic_hash_join().rewrite_semi_to_inner) {
-        if (path->optimistic_hash_join().outer->type == AccessPath::REMOVE_DUPLICATES) {
+        if (path->optimistic_hash_join().outer->type ==
+            AccessPath::REMOVE_DUPLICATES) {
           description.append(" (LooseScan)");
           error |= AddMemberToObject<Json_string>(obj, "semijoin_strategy",
                                                   "loosescan");
@@ -1593,7 +1597,8 @@ static unique_ptr<Json_object> SetObjectMembers(
       }
       if (equijoin_conditions.empty()) {
         if ((type != RelationalExpression::SEMIJOIN) &&
-            path->optimistic_hash_join().inner->type == AccessPath::LIMIT_OFFSET &&
+            path->optimistic_hash_join().inner->type ==
+                AccessPath::LIMIT_OFFSET &&
             path->optimistic_hash_join().inner->limit_offset().limit == 1) {
           description.append(" (FirstMatch)");
           error |= AddMemberToObject<Json_string>(obj, "semijoin_strategy",
@@ -1672,7 +1677,7 @@ static unique_ptr<Json_object> SetObjectMembers(
 
       break;
     }
-      
+
     case AccessPath::HASH_JOIN: {
       const JoinPredicate *predicate = path->hash_join().join_predicate;
       RelationalExpression::Type type = path->hash_join().rewrite_semi_to_inner
@@ -2596,11 +2601,14 @@ void Explain_format_tree::ExplainPrintWentOnDisk(const Json_object *obj,
   std::stringstream ss;
   ss << std::boolalpha;
 
-  auto access_type = down_cast<const Json_string *>(obj->get("access_type"))->value();
+  auto access_type =
+      down_cast<const Json_string *>(obj->get("access_type"))->value();
   if (access_type == "join") {
-    auto join_algorithm = down_cast<const Json_string *>(obj->get("join_algorithm"))->value();
+    auto join_algorithm =
+        down_cast<const Json_string *>(obj->get("join_algorithm"))->value();
     if (join_algorithm == "hash") {
-      auto went_on_disk = down_cast<const Json_boolean *>(obj->get("went_on_disk"))->value();
+      auto went_on_disk =
+          down_cast<const Json_boolean *>(obj->get("went_on_disk"))->value();
       ss << "  (went_on_disk=" << went_on_disk << ")";
     }
   }
@@ -2609,17 +2617,24 @@ void Explain_format_tree::ExplainPrintWentOnDisk(const Json_object *obj,
 }
 
 void Explain_format_tree::ExplainPrintOptimisticHashJoin(const Json_object *obj,
-                                                         std::string* explain) {
+                                                         std::string *explain) {
   std::stringstream ss;
   ss << std::boolalpha;
 
-  auto was_optimistic_hash_join = down_cast<const Json_boolean *>(obj->get("was_optimistic_hash_join"))->value();
+  auto was_optimistic_hash_join =
+      down_cast<const Json_boolean *>(obj->get("was_optimistic_hash_join"))
+          ->value();
 
   if (was_optimistic_hash_join) {
     ss << "  (optimistic hash join!)";
 
-    auto optimism_level = down_cast<const Json_double *>(obj->get("optimism_level"))->value();
+    auto optimism_level =
+        down_cast<const Json_double *>(obj->get("optimism_level"))->value();
     ss << " (optimism_level=" << optimism_level << ")";
+
+    auto optimism_func = 
+        down_cast<const Json_string *>(obj->get("optimism_func"))->value();
+    ss << " (optimism_func=" << optimism_func << ")";
   }
 
   *explain += ss.str();
