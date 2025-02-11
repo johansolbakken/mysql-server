@@ -307,8 +307,6 @@ optimizer_func:
               $$ = static_cast<int>(OptimismFunc::NONE);
           else if (strcasecmp($1.str, "LINEAR") == 0)
               $$ = static_cast<int>(OptimismFunc::LINEAR);
-          else if (strcasecmp($1.str, "CLAMPED") == 0)
-              $$ = static_cast<int>(OptimismFunc::CLAMPED);
           else if (strcasecmp($1.str, "SIGMOID") == 0)
               $$ = static_cast<int>(OptimismFunc::SIGMOID);
           else if (strcasecmp($1.str, "EXPONENTIAL") == 0)

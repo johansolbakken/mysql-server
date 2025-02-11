@@ -5253,11 +5253,6 @@ bool CostingReceiver::AllowOptimisticHashJoin(NodeMap left, NodeMap right,
       auto rhs = join_buffer_size * optimism_level;
       return lhs < rhs;
     }
-    case OptimismFunc::CLAMPED: {
-      auto lhs = std::max(
-          0.0, std::min(1.0, row_width * cardinality_build / join_buffer_size));
-      return lhs <= optimism_level;
-    }
     case OptimismFunc::SIGMOID: {
       auto x = row_width * cardinality_build / join_buffer_size;
       auto lhs = 1.0 / (1.0 + std::exp(-x));
