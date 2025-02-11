@@ -5259,7 +5259,8 @@ bool CostingReceiver::AllowOptimisticHashJoin(NodeMap left, NodeMap right,
       return lhs >= optimism_level;
     }
     case OptimismFunc::EXPONENTIAL: {
-      auto lhs = cardinality_build * row_width * std::exp(-optimism_level);
+      double phi = 2.0;
+      auto lhs = cardinality_build * row_width * std::pow(phi, -2.0 * optimism_level + 1);
       return lhs < join_buffer_size;
     }
     case OptimismFunc::NONE:
