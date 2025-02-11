@@ -5254,9 +5254,9 @@ bool CostingReceiver::AllowOptimisticHashJoin(NodeMap left, NodeMap right,
       return lhs < rhs;
     }
     case OptimismFunc::SIGMOID: {
-      auto x = row_width * cardinality_build / join_buffer_size;
+      auto x = join_buffer_size - row_width * cardinality_build;
       auto lhs = 1.0 / (1.0 + std::exp(-x));
-      return lhs <= optimism_level;
+      return lhs >= optimism_level;
     }
     case OptimismFunc::EXPONENTIAL: {
       auto lhs = cardinality_build * row_width * std::exp(-optimism_level);
