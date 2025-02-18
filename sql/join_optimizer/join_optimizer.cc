@@ -43,6 +43,7 @@
 #include <unordered_map>
 #include <utility>
 #include <vector>
+#include <fstream>
 
 #include "ft_global.h"
 #include "map_helpers.h"
@@ -5229,16 +5230,25 @@ bool CostingReceiver::AllowOptimisticHashJoin(NodeMap left, NodeMap right,
                                               const AccessPath &left_path,
                                               const AccessPath &right_path,
                                               const JoinPredicate &edge) const {
+  std::ofstream outfile("/Users/johansolbakken/ntnu/solbakken-sunde-supermodule/analysis/allow_optimistic_hash_join.csv", std::ios::app);
+  if (!outfile.is_open()) {
+    std::cerr << "Error opening file for appending\n";
+    return 1;
+  }
+
   if (m_thd->disable_optimistic_hash_join) {
+    outfile << "OPTIMISTIC_HASH_JOIN_DISABLED\n";
     return false;
   }
 
   if (!AllowHashJoin(left, right, left_path, right_path, edge)) {
+    outfile << "HASH_JOIN_NOT_ALLOWED\n";
     return false;
   }
 
   // Do not allow optimsitic hash join if there is not sort order on left path.
   if (left_path.ordering_state == 0) {
+    outfile << "NO_ORDERING\n";
     return false;
   }
 
@@ -5247,28 +5257,38 @@ bool CostingReceiver::AllowOptimisticHashJoin(NodeMap left, NodeMap right,
   double cardinality_build = right_path.num_output_rows();
   double join_buffer_size = static_cast<double>(m_thd->variables.join_buff_size);
 
+  bool allowed = true;
   switch (m_thd->optimism_func) {
     case OptimismFunc::LINEAR: {
       auto lhs = (1.0-optimism_level) * row_width * cardinality_build;
       auto rhs = join_buffer_size * optimism_level;
-      return lhs < rhs;
+      allowed = lhs < rhs;
+      break;
     }
     case OptimismFunc::SIGMOID: {
       double omega = 10.0;
       auto x = omega - omega * row_width * cardinality_build / join_buffer_size;
       auto lhs = 1.0 / (1.0 + std::exp(-x));
-      return lhs >= 1.0 - optimism_level;
+      allowed = lhs >= 1.0 - optimism_level;
+      break;
     }
     case OptimismFunc::EXPONENTIAL: {
       double phi = 2.0;
       auto lhs = cardinality_build * row_width * std::pow(phi, -2.0 * optimism_level + 1);
-      return lhs < join_buffer_size;
+      allowed = lhs < join_buffer_size;
+      break;
     }
     case OptimismFunc::NONE:
       break;
   }
 
-  return true;
+  if (allowed) {
+    outfile << "ALLOWED\n";
+  } else  {
+    outfile << "NOT_ALLOWED_BY_OPTIFUNC\n";
+  }
+
+  return allowed;
 }
 
 void CostingReceiver::ProposeOptimisticHashJoin(
