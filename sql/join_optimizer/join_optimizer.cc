@@ -44,6 +44,7 @@
 #include <utility>
 #include <vector>
 
+#include "add_with_saturate.h"
 #include "ft_global.h"
 #include "map_helpers.h"
 #include "mem_root_deque.h"
@@ -97,6 +98,7 @@
 #include "sql/opt_costmodel.h"
 #include "sql/opt_hints.h"
 #include "sql/optimism/optimism.h"
+#include "sql/parse_tree_hints.h"
 #include "sql/parse_tree_node_base.h"
 #include "sql/partition_info.h"
 #include "sql/query_options.h"
@@ -5225,6 +5227,229 @@ size_t EstimateRowWidthForHashJoin(const JoinHypergraph &graph, NodeMap right_no
   return ret;
 }
 
+static size_t ComputeSubTreeHeight(const AccessPath *path) {
+  if (!path) return 0;
+
+  size_t max_height = 0;
+
+  switch (path->type) {
+    // Single-child cases
+    case AccessPath::FILTER: {
+      auto *child = path->filter().child;
+      size_t ch = ComputeSubTreeHeight(child);
+      max_height = std::max(max_height, ch);
+      break;
+    }
+    case AccessPath::SORT: {
+      auto *child = path->sort().child;
+      size_t ch = ComputeSubTreeHeight(child);
+      max_height = std::max(max_height, ch);
+      break;
+    }
+    case AccessPath::AGGREGATE: {
+      auto *child = path->aggregate().child;
+      size_t ch = ComputeSubTreeHeight(child);
+      max_height = std::max(max_height, ch);
+      break;
+    }
+    case AccessPath::TEMPTABLE_AGGREGATE: {
+      auto *subq = path->temptable_aggregate().subquery_path;
+      size_t ch = ComputeSubTreeHeight(subq);
+      max_height = std::max(max_height, ch);
+      break;
+    }
+    case AccessPath::LIMIT_OFFSET: {
+      auto *child = path->limit_offset().child;
+      size_t ch = ComputeSubTreeHeight(child);
+      max_height = std::max(max_height, ch);
+      break;
+    }
+    case AccessPath::STREAM: {
+      auto *child = path->stream().child;
+      size_t ch = ComputeSubTreeHeight(child);
+      max_height = std::max(max_height, ch);
+      break;
+    }
+    case AccessPath::MATERIALIZE: {
+      auto *child = path->materialize().table_path;
+      size_t ch = ComputeSubTreeHeight(child);
+      max_height = std::max(max_height, ch);
+      break;
+    }
+    case AccessPath::MATERIALIZE_INFORMATION_SCHEMA_TABLE: {
+      auto *child = path->materialize_information_schema_table().table_path;
+      size_t ch = ComputeSubTreeHeight(child);
+      max_height = std::max(max_height, ch);
+      break;
+    }
+    case AccessPath::WINDOW: {
+      auto *child = path->window().child;
+      size_t ch = ComputeSubTreeHeight(child);
+      max_height = std::max(max_height, ch);
+      break;
+    }
+    case AccessPath::WEEDOUT: {
+      auto *child = path->weedout().child;
+      size_t ch = ComputeSubTreeHeight(child);
+      max_height = std::max(max_height, ch);
+      break;
+    }
+    case AccessPath::REMOVE_DUPLICATES: {
+      auto *child = path->remove_duplicates().child;
+      size_t ch = ComputeSubTreeHeight(child);
+      max_height = std::max(max_height, ch);
+      break;
+    }
+    case AccessPath::REMOVE_DUPLICATES_ON_INDEX: {
+      auto *child = path->remove_duplicates_on_index().child;
+      size_t ch = ComputeSubTreeHeight(child);
+      max_height = std::max(max_height, ch);
+      break;
+    }
+    case AccessPath::ALTERNATIVE: {
+      auto *child = path->alternative().child;
+      size_t ch = ComputeSubTreeHeight(child);
+      max_height = std::max(max_height, ch);
+      break;
+    }
+    case AccessPath::CACHE_INVALIDATOR: {
+      auto *child = path->cache_invalidator().child;
+      size_t ch = ComputeSubTreeHeight(child);
+      max_height = std::max(max_height, ch);
+      break;
+    }
+    case AccessPath::DELETE_ROWS: {
+      auto *child = path->delete_rows().child;
+      size_t ch = ComputeSubTreeHeight(child);
+      max_height = std::max(max_height, ch);
+      break;
+    }
+    case AccessPath::UPDATE_ROWS: {
+      auto *child = path->update_rows().child;
+      size_t ch = ComputeSubTreeHeight(child);
+      max_height = std::max(max_height, ch);
+      break;
+    }
+
+    // Two-child joins
+    case AccessPath::NESTED_LOOP_JOIN: {
+      size_t h1 = ComputeSubTreeHeight(path->nested_loop_join().outer);
+      size_t h2 = ComputeSubTreeHeight(path->nested_loop_join().inner);
+      max_height = std::max(h1, h2);
+      break;
+    }
+    case AccessPath::NESTED_LOOP_SEMIJOIN_WITH_DUPLICATE_REMOVAL: {
+      size_t h1 = ComputeSubTreeHeight(
+          path->nested_loop_semijoin_with_duplicate_removal().outer);
+      size_t h2 = ComputeSubTreeHeight(
+          path->nested_loop_semijoin_with_duplicate_removal().inner);
+      max_height = std::max(h1, h2);
+      break;
+    }
+    case AccessPath::HASH_JOIN: {
+      size_t h1 = ComputeSubTreeHeight(path->hash_join().outer);
+      size_t h2 = ComputeSubTreeHeight(path->hash_join().inner);
+      max_height = std::max(h1, h2);
+      break;
+    }
+    case AccessPath::OPTIMISTIC_HASH_JOIN: {
+      size_t h1 = ComputeSubTreeHeight(path->optimistic_hash_join().outer);
+      size_t h2 = ComputeSubTreeHeight(path->optimistic_hash_join().inner);
+      max_height = std::max(h1, h2);
+      break;
+    }
+    case AccessPath::BKA_JOIN: {
+      size_t h1 = ComputeSubTreeHeight(path->bka_join().outer);
+      size_t h2 = ComputeSubTreeHeight(path->bka_join().inner);
+      max_height = std::max(h1, h2);
+      break;
+    }
+
+    // Multiple children
+    case AccessPath::APPEND: {
+      if (path->append().children) {
+        for (auto &child : *path->append().children) {
+          if (!child.path) continue;
+          size_t ch = ComputeSubTreeHeight(child.path);
+          max_height = std::max(max_height, ch);
+        }
+      }
+      break;
+    }
+
+    // ROWID_INTERSECTION can have multiple children + an optional cpk_child
+    case AccessPath::ROWID_INTERSECTION: {
+      if (path->rowid_intersection().children) {
+        for (AccessPath *c : *path->rowid_intersection().children) {
+          size_t ch = ComputeSubTreeHeight(c);
+          max_height = std::max(max_height, ch);
+        }
+      }
+      if (path->rowid_intersection().cpk_child) {
+        size_t cpk_h = ComputeSubTreeHeight(path->rowid_intersection().cpk_child);
+        max_height = std::max(max_height, cpk_h);
+      }
+      break;
+    }
+
+    case AccessPath::ROWID_UNION: {
+      if (path->rowid_union().children) {
+        for (AccessPath *c : *path->rowid_union().children) {
+          size_t ch = ComputeSubTreeHeight(c);
+          max_height = std::max(max_height, ch);
+        }
+      }
+      break;
+    }
+
+    case AccessPath::INDEX_MERGE: {
+      if (path->index_merge().children) {
+        for (AccessPath *c : *path->index_merge().children) {
+          size_t ch = ComputeSubTreeHeight(c);
+          max_height = std::max(max_height, ch);
+        }
+      }
+      break;
+    }
+
+    // No recognized children => treat as leaf
+    default:
+      break;
+  }
+
+  // The height of this node is 1 + the largest child height:
+  return max_height+1;
+}
+
+double LinearInflation(double nu, double theta, double eta)
+{
+  return nu * (1.0 + theta * eta);
+}
+
+
+double QuadraticInflation(double nu, double theta, double eta)
+{
+  return nu * (1.0 + theta * (eta * eta));
+}
+
+double SaturatingInflation(double nu, double theta, double eta)
+{
+  double frac = eta / (eta + 1.0); // goes from 0 to ~1 as eta grows
+  return nu * (1.0 + theta * frac);
+}
+
+double ExponentialInflation(double nu, double theta, double eta)
+{
+  return nu * std::exp(theta * eta);
+}
+
+double CappedLinearInflation(double nu, double theta, double eta, double theta_max_cap)
+{
+  double linearVal = nu * (1.0 + theta * eta);
+  double capVal    = nu * (1.0 + theta_max_cap);
+  return std::min(linearVal, capVal);
+}
+
 bool CostingReceiver::AllowOptimisticHashJoin(NodeMap left, NodeMap right,
                                               const AccessPath &left_path,
                                               const AccessPath &right_path,
@@ -5242,33 +5467,31 @@ bool CostingReceiver::AllowOptimisticHashJoin(NodeMap left, NodeMap right,
     return false;
   }
 
-  double optimism_level = m_thd->optimism_level;
-  double row_width = EstimateRowWidthForHashJoin(*m_graph, right);
-  double cardinality_build = right_path.num_output_rows();
-  double join_buffer_size = static_cast<double>(m_thd->variables.join_buff_size);
+  double theta   = m_thd->optimism_level;
+  double omega   = EstimateRowWidthForHashJoin(*m_graph, right);
+  double nu      = right_path.num_output_rows();
+  double kappa   = static_cast<double>(m_thd->variables.join_buff_size);
+  double eta     = static_cast<double>(ComputeSubTreeHeight(&right_path));
 
+  double nu_eff  = 0.0;
   switch (m_thd->optimism_func) {
-    case OptimismFunc::LINEAR: {
-      auto lhs = (1.0-optimism_level) * row_width * cardinality_build;
-      auto rhs = join_buffer_size * optimism_level;
-      return lhs < rhs;
-    }
-    case OptimismFunc::SIGMOID: {
-      double omega = 10.0;
-      auto x = omega - omega * row_width * cardinality_build / join_buffer_size;
-      auto lhs = 1.0 / (1.0 + std::exp(-x));
-      return lhs >= 1.0 - optimism_level;
-    }
-    case OptimismFunc::EXPONENTIAL: {
-      double phi = 2.0;
-      auto lhs = cardinality_build * row_width * std::pow(phi, -2.0 * optimism_level + 1);
-      return lhs < join_buffer_size;
-    }
-    case OptimismFunc::NONE:
+    case OptimismFunc::LINEAR:
+      nu_eff = LinearInflation(nu, theta, eta);
+      break;
+    case OptimismFunc::SIGMOID:
+      nu_eff = QuadraticInflation(nu, theta, eta);
+      break;
+    case OptimismFunc::EXPONENTIAL:
+      nu_eff = ExponentialInflation(nu, theta, eta);
+      break;
+    default:
+      nu_eff = SaturatingInflation(nu, theta, eta);
       break;
   }
 
-  return true;
+  double memNeeded = nu_eff * omega;
+
+  return (memNeeded <= kappa);
 }
 
 void CostingReceiver::ProposeOptimisticHashJoin(
@@ -5316,6 +5539,8 @@ void CostingReceiver::ProposeOptimisticHashJoin(
   join_path.optimistic_hash_join().allow_spill_to_disk = true;
   join_path.has_group_skip_scan =
       left_path->has_group_skip_scan || right_path->has_group_skip_scan;
+
+  // join_path.sub_tree_height = ComputeSubTreeHeight(&join_path);
 
   // See the equivalent code in ProposeNestedLoopJoin().
   if (rewrite_semi_to_inner) {

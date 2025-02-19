@@ -1093,6 +1093,7 @@ static bool AddPathCosts(const AccessPath *path,
                                           current_thd->optimism_level);
   error |= AddMemberToObject<Json_string>(obj, "optimism_func",
                                           OptimismFuncToString(current_thd->optimism_func));
+  error |= AddMemberToObject<Json_uint>(obj, "sub_tree_height", path->sub_tree_height);
 
   /* Add analyze figures */
   if (explain_analyze) {
@@ -2555,11 +2556,15 @@ void Explain_format_tree::ExplainPrintCosts(const Json_object *obj,
       double first_row_cost = GetJSONDouble(obj, "estimated_first_row_cost");
       stream << "  (cost=" << FormatNumberReadably(first_row_cost) << ".."
              << FormatNumberReadably(last_cost)
-             << " rows=" << FormatNumberReadably(rows) << ")";
+             << " rows=" << FormatNumberReadably(rows);
     } else {
       stream << "  (cost=" << FormatNumberReadably(last_cost)
-             << " rows=" << FormatNumberReadably(rows) << ")";
+             << " rows=" << FormatNumberReadably(rows);
     }
+
+    size_t height = down_cast<Json_uint *>(obj->get("sub_tree_height"))->value();
+    stream << " height=" << height;
+    stream << ")";
 
     *explain += stream.str();
   }
@@ -2632,7 +2637,7 @@ void Explain_format_tree::ExplainPrintOptimisticHashJoin(const Json_object *obj,
         down_cast<const Json_double *>(obj->get("optimism_level"))->value();
     ss << ", o_level=" << optimism_level;
 
-    auto optimism_func = 
+    auto optimism_func =
         down_cast<const Json_string *>(obj->get("optimism_func"))->value();
     ss << ", o_func=" << optimism_func;
 

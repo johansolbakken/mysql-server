@@ -322,6 +322,9 @@ struct AccessPath {
     UNSAFE = 2
   };
 
+  // At which height this access path is in the tree.
+  size_t sub_tree_height = 1;
+
   /// Whether it is safe to get row IDs (for sorting) from this access path.
   Safety safe_for_rowid = SAFE;
 
