@@ -5421,11 +5421,23 @@ static size_t ComputeSubTreeHeight(const AccessPath *path) {
   return max_height+1;
 }
 
+// Calculates Linear inflation to the estimated
+//
+//   nu:    cardinality estimate
+//   theta: optimism level
+//   eta:   tree depth
+//
+// This function increases cardinality with tree depth and decreases
+// cardinality with optimism level.
 double LinearInflation(double nu, double theta, double eta)
 {
-  return nu * (1.0 + theta * eta);
-}
+  double depth_factor = 0.1;
+  double optimism_factor = 1.0;
 
+  // More tree depth means adjust positive. More optimism means adjust negative.
+  double adjustment = 1.0 + depth_factor * eta - optimism_factor * theta;
+  return nu * adjustment;
+}
 
 double QuadraticInflation(double nu, double theta, double eta)
 {
