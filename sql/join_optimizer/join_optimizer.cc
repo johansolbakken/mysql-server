@@ -5439,29 +5439,6 @@ double LinearInflation(double nu, double theta, double eta)
   return nu * adjustment;
 }
 
-double QuadraticInflation(double nu, double theta, double eta)
-{
-  return nu * (1.0 + theta * (eta * eta));
-}
-
-double SaturatingInflation(double nu, double theta, double eta)
-{
-  double frac = eta / (eta + 1.0); // goes from 0 to ~1 as eta grows
-  return nu * (1.0 + theta * frac);
-}
-
-double ExponentialInflation(double nu, double theta, double eta)
-{
-  return nu * std::exp(theta * eta);
-}
-
-double CappedLinearInflation(double nu, double theta, double eta, double theta_max_cap)
-{
-  double linearVal = nu * (1.0 + theta * eta);
-  double capVal    = nu * (1.0 + theta_max_cap);
-  return std::min(linearVal, capVal);
-}
-
 bool CostingReceiver::AllowOptimisticHashJoin(NodeMap left, NodeMap right,
                                               const AccessPath &left_path,
                                               const AccessPath &right_path,
@@ -5491,13 +5468,9 @@ bool CostingReceiver::AllowOptimisticHashJoin(NodeMap left, NodeMap right,
       nu_eff = LinearInflation(nu, theta, eta);
       break;
     case OptimismFunc::SIGMOID:
-      nu_eff = QuadraticInflation(nu, theta, eta);
-      break;
-    case OptimismFunc::EXPONENTIAL:
-      nu_eff = ExponentialInflation(nu, theta, eta);
-      break;
+      return true;
     default:
-      nu_eff = SaturatingInflation(nu, theta, eta);
+      return false;
       break;
   }
 
