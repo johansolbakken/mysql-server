@@ -1095,24 +1095,18 @@ static bool AddPathCosts(const AccessPath *path,
                                           OptimismFuncToString(current_thd->optimism_func));
   error |= AddMemberToObject<Json_uint>(obj, "sub_tree_height", path->sub_tree_height);
 
+  if (path->type == AccessPath::OPTIMISTIC_HASH_JOIN) {
+    const auto *iterator = dynamic_cast<const OptimisticHashJoinIterator *>(
+        path->iterator->real_iterator());
+    error |= AddMemberToObject<Json_boolean>(obj, "went_on_disk",
+                                              iterator->WentOnDisk());
+  }
+
   /* Add analyze figures */
   if (explain_analyze) {
     int num_init_calls = 0;
 
     if (path->iterator != nullptr) {
-      if (path->type == AccessPath::HASH_JOIN) {
-        const auto *iterator = dynamic_cast<const HashJoinIterator *>(
-            path->iterator->real_iterator());
-        error |= AddMemberToObject<Json_boolean>(obj, "went_on_disk",
-                                                 iterator->WentOnDisk());
-
-      } else if (path->type == AccessPath::OPTIMISTIC_HASH_JOIN) {
-        const auto *iterator = dynamic_cast<const OptimisticHashJoinIterator *>(
-            path->iterator->real_iterator());
-        error |= AddMemberToObject<Json_boolean>(obj, "went_on_disk",
-                                                 iterator->WentOnDisk());
-      }
-
       const IteratorProfiler *const profiler = path->iterator->GetProfiler();
       if ((num_init_calls = profiler->GetNumInitCalls()) != 0) {
         error |= AddMemberToObject<Json_double>(
@@ -2611,11 +2605,6 @@ void Explain_format_tree::ExplainPrintWentOnDisk(const Json_object *obj,
   if (access_type == "join") {
     auto join_algorithm =
         down_cast<const Json_string *>(obj->get("join_algorithm"))->value();
-    if (join_algorithm == "hash") {
-      auto went_on_disk =
-          down_cast<const Json_boolean *>(obj->get("went_on_disk"))->value();
-      ss << "  (went_on_disk=" << went_on_disk << ")";
-    }
   }
 
   *explain += ss.str();
@@ -2640,6 +2629,10 @@ void Explain_format_tree::ExplainPrintOptimisticHashJoin(const Json_object *obj,
     auto optimism_func =
         down_cast<const Json_string *>(obj->get("optimism_func"))->value();
     ss << ", o_func=" << optimism_func;
+
+    auto went_on_disk =
+        down_cast<const Json_boolean *>(obj->get("went_on_disk"))->value();
+    ss << ", went_on_disk=" << went_on_disk;
 
     ss << ")";
   }
