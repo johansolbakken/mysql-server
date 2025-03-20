@@ -5682,9 +5682,9 @@ void CostingReceiver::ProposeOptimisticHashJoin(
   join_path.delayed_predicates = join_path.delayed_predicates;
   join_path.optimistic_hash_join().filesort = nullptr;
   join_path.optimistic_hash_join().tables_to_get_rowid_for = 0;
+  join_path.ordering_state = left_path->ordering_state;
   join_path.optimistic_hash_join().order = BuildSortAheadOrdering(
-      m_thd, m_orderings,
-      ReduceFinalOrdering(m_thd, *m_orderings, left_path->ordering_state));
+      m_thd, m_orderings, m_orderings->ordering(left_path->ordering_state));
   join_path.optimistic_hash_join().remove_duplicates = false;
   join_path.optimistic_hash_join().unwrap_rollup = true;
   join_path.optimistic_hash_join().limit = HA_POS_ERROR;
