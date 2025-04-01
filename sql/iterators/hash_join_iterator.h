@@ -362,7 +362,7 @@ class HashJoinIterator final : public RowIterator {
 
   int ChunkCount() { return m_chunk_files_on_disk.size(); }
 
-  [[nodiscard]] bool WentOnDisk() const { return on_disk_hash_join(); }
+  [[nodiscard]] bool WentOnDisk() const noexcept { return m_went_on_disk; }
 
  private:
   /// Read all rows from the build input and store the rows into the in-memory
@@ -707,6 +707,8 @@ class HashJoinIterator final : public RowIterator {
   /// antijoin.)
   /// @returns 'true' in case of error.
   bool InitHashTable();
+
+  bool m_went_on_disk = false;
 };
 
 #endif  // SQL_ITERATORS_HASH_JOIN_ITERATOR_H_

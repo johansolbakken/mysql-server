@@ -41,7 +41,7 @@ int OptimisticHashJoinIterator::Read(){
   return (*m_read_iterator)->Read();
 }
 
-bool OptimisticHashJoinIterator::WentOnDisk() const {
+bool OptimisticHashJoinIterator::WentOnDisk() const noexcept {
   // We have moved the hash join into the sort if we have
   // gone on disk.
   if (m_hash_join_is_moved) {

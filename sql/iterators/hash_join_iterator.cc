@@ -564,6 +564,9 @@ bool HashJoinIterator::BuildHashTable() {
         // we should always manage to insert at least one row.
         assert(!m_row_buffer.empty());
 
+        // Set went on disk to true
+        m_went_on_disk = true;
+
         // If we are not allowed to spill to disk, just go on to reading from
         // the probe iterator.
         if (!m_allow_spill_to_disk) {

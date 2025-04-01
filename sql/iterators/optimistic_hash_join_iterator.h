@@ -46,9 +46,9 @@ class OptimisticHashJoinIterator final : public RowIterator {
     // them.
   }
 
-  [[nodiscard]] const RowIterator* hash_join_iterator() const { return m_hash_join->real_iterator(); }
+  [[nodiscard]] const RowIterator* hash_join_iterator() const noexcept { return m_hash_join->real_iterator(); }
 
-  [[nodiscard]] bool WentOnDisk() const;
+  [[nodiscard]] bool WentOnDisk() const noexcept;
 
 private:
   bool m_hash_join_is_moved = false;
