@@ -5456,6 +5456,11 @@ bool CostingReceiver::AllowOptimisticHashJoin(NodeMap left, NodeMap right,
     return false;
   }
 
+  // NOTE(johan): What does it mean that a child has an ordering that does not exist?
+  if (left_path.ordering_state > m_orderings->num_orderings()) {
+    return false;
+  }
+
   double theta   = m_thd->optimism_level;
   double omega   = EstimateRowWidthForHashJoin(*m_graph, right);
   double nu      = right_path.num_output_rows();
