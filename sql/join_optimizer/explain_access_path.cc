@@ -1102,6 +1102,18 @@ static bool AddPathCosts(const AccessPath *path,
                                               iterator->WentOnDisk());
   }
 
+  if (path->type == AccessPath::HASH_JOIN) {
+    const auto *iterator =
+        dynamic_cast<const HashJoinIterator *>(path->iterator->real_iterator());
+    error |= AddMemberToObject<Json_double>(obj, "fill_ratio",
+                                              iterator->BufferFillRatio());
+  } else if (path->type == AccessPath::OPTIMISTIC_HASH_JOIN) {
+    const auto *iterator = dynamic_cast<const OptimisticHashJoinIterator *>(
+        path->iterator->real_iterator());
+    error |= AddMemberToObject<Json_double>(obj, "fill_ratio",
+                                              iterator->BufferFillRatio());
+  }
+
   /* Add analyze figures */
   if (explain_analyze) {
     int num_init_calls = 0;
@@ -2635,6 +2647,12 @@ void Explain_format_tree::ExplainPrintOptimisticHashJoin(const Json_object *obj,
     ss << ", went_on_disk=" << went_on_disk;
 
     ss << ")";
+  }
+
+  if (was_optimistic_hash_join) {
+    auto fill_ratio =
+        down_cast<const Json_double *>(obj->get("fill_ratio"))->value();
+    ss << " (fill_ratio=" << fill_ratio << ")";
   }
 
   *explain += ss.str();

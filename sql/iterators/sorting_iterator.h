@@ -108,6 +108,8 @@ class SortingIterator final : public RowIterator {
   void SetSourceIterator(unique_ptr_destroy_only<RowIterator>&& iterator) { m_source_iterator = std::move(iterator); }
   void DoNotInitSource() { m_should_init_source = false; }
 
+  [[nodiscard]] const unique_ptr_destroy_only<RowIterator>& SourceIterator() const { return m_source_iterator; }
+
  private:
   int DoSort();
   void ReleaseBuffers();

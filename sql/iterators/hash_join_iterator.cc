@@ -486,8 +486,8 @@ static bool InitializeChunkFiles(size_t estimated_rows_produced_by_join,
 }
 
 [[nodiscard]] double HashJoinIterator::BufferFillRatio() const noexcept {
-  size_t used = m_row_buffer->UsedMemoryBytes();
-  size_t max = m_row_buffer->MaxMemAvailable();
+  size_t used = m_row_buffer.UsedMemoryBytes();
+  size_t max = m_row_buffer.MaxMemAvailable();
   if (max == 0) {
     return 0.0;
   }
