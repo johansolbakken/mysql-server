@@ -1089,6 +1089,10 @@ static bool AddPathCosts(const AccessPath *path,
   error |= AddMemberToObject<Json_boolean>(
       obj, "was_optimistic_hash_join",
       path->type == AccessPath::OPTIMISTIC_HASH_JOIN);
+  error |= AddMemberToObject<Json_boolean>(
+      obj, "was_hash_join",
+      path->type == AccessPath::HASH_JOIN);
+
   error |= AddMemberToObject<Json_double>(obj, "optimism_level",
                                           current_thd->optimism_level);
   error |= AddMemberToObject<Json_string>(obj, "optimism_func",
@@ -2630,6 +2634,9 @@ void Explain_format_tree::ExplainPrintOptimisticHashJoin(const Json_object *obj,
   auto was_optimistic_hash_join =
       down_cast<const Json_boolean *>(obj->get("was_optimistic_hash_join"))
           ->value();
+  auto was_hash_join =
+      down_cast<const Json_boolean *>(obj->get("was_hash_join"))
+          ->value();
 
   if (was_optimistic_hash_join) {
     ss << "  (optimistic hash join";
@@ -2649,7 +2656,7 @@ void Explain_format_tree::ExplainPrintOptimisticHashJoin(const Json_object *obj,
     ss << ")";
   }
 
-  if (was_optimistic_hash_join) {
+  if (was_optimistic_hash_join || was_hash_join) {
     auto fill_ratio =
         down_cast<const Json_double *>(obj->get("fill_ratio"))->value();
     ss << " (fill_ratio=" << fill_ratio << ")";
