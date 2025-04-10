@@ -485,6 +485,16 @@ static bool InitializeChunkFiles(size_t estimated_rows_produced_by_join,
   return false;
 }
 
+[[nodiscard]] double HashJoinIterator::BufferFillRatio() const noexcept {
+  size_t used = m_row_buffer->UsedMemoryBytes();
+  size_t max = m_row_buffer->MaxMemAvailable();
+  if (max == 0) {
+    return 0.0;
+  }
+
+  return static_cast<double>(used) / static_cast<double>(max);
+}
+
 bool HashJoinIterator::BuildHashTable() {
   if (!m_build_iterator_has_more_rows) {
     m_state = State::END_OF_ROWS;
