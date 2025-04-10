@@ -97,6 +97,8 @@ LinkedImmutableString StoreLinkedImmutableStringFromTableBuffers(
   if (!committed) {
     mem_root->RawCommit(actual_length);
   }
+
+  info->m_bytes_needed = actual_length;
   return ret;
 }
 
@@ -164,9 +166,16 @@ class HashJoinRowBuffer::HashMap
 LinkedImmutableString
 HashJoinRowBuffer::StoreLinkedImmutableStringFromTableBuffers(
     LinkedImmutableString next_ptr, StoreLinkedInfo *info) {
-  return ::StoreLinkedImmutableStringFromTableBuffers(
-      &m_mem_root, &m_overflow_mem_root, m_tables, next_ptr,
-      m_row_size_upper_bound, info);
+
+  LinkedImmutableString ret =
+      ::StoreLinkedImmutableStringFromTableBuffers(
+          &m_mem_root, &m_overflow_mem_root, m_tables, next_ptr,
+          m_row_size_upper_bound, info);
+
+  if (ret != nullptr) {
+    m_allocated_bytes += info->m_bytes_needed;
+  }
+  return ret;
 }
 
 // A convenience form of LoadIntoTableBuffers() that also verifies the end
@@ -365,4 +374,8 @@ std::pair<const char *, uint64_t> VarintParseSlow64(const char *p,
     }
   }
   return {nullptr, 0};
+}
+
+[[nodiscard]] size_t hash_join_buffer::HashJoinRowBuffer::UsedMemoryBytes() const noexcept {
+  return m_allocated_bytes;
 }

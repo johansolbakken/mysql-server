@@ -169,6 +169,8 @@ class HashJoinRowBuffer {
 
   bool contains(const Key &key) const { return find(key).has_value(); }
 
+  [[nodiscard]] size_t UsedMemoryBytes() const noexcept;
+
  private:
   // The type of hash map in which the rows are stored.
   class HashMap;
@@ -218,6 +220,8 @@ class HashJoinRowBuffer {
   // packed string.
   LinkedImmutableString StoreLinkedImmutableStringFromTableBuffers(
       LinkedImmutableString next_ptr, StoreLinkedInfo *info);
+
+  size_t m_allocated_bytes = 0;
 };
 
 }  // namespace hash_join_buffer
