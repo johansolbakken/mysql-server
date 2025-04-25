@@ -5425,13 +5425,18 @@ static size_t ComputeSubTreeHeight(const AccessPath *path) {
 //
 // This function increases cardinality with tree depth and decreases
 // cardinality with optimism level.
-double LinearInflation(double cardinality, double optimism_level, double tree_depth)
+double LinearInflation(double cardinality, double optimism_level)
 {
-  double depth_factor = 0.0;
-  double optimism_factor = 1.0;
+  if (optimism_level <= 0) {
+    return std::numeric_limits<double>::infinity();
+  }
+
+  if (optimism_level >= 1) {
+    return 0;
+  }
 
   // More tree depth means adjust positive. More optimism means adjust negative.
-  double adjustment = 1.0 + depth_factor * tree_depth - optimism_factor * optimism_level;
+  double adjustment = (1.0 - optimism_level) / optimism_level;
   return cardinality * adjustment;
 }
 
@@ -5461,12 +5466,12 @@ bool CostingReceiver::AllowOptimisticHashJoin(NodeMap left, NodeMap right,
   double row_width        = EstimateRowWidthForHashJoin(*m_graph, right);
   double cardinality      = right_path.num_output_rows();
   double join_buff_size   = static_cast<double>(m_thd->variables.join_buff_size);
-  double tree_height      = static_cast<double>(ComputeSubTreeHeight(&right_path));
+  //double tree_height      = static_cast<double>(ComputeSubTreeHeight(&right_path));
 
   double cardinality_eff  = 0.0;
   switch (m_thd->optimism_func) {
     case OptimismFunc::LINEAR:
-      cardinality_eff = LinearInflation(cardinality, optimism_level, tree_height);
+      cardinality_eff = LinearInflation(cardinality, optimism_level);
       break;
     case OptimismFunc::SIGMOID:
       return true;
