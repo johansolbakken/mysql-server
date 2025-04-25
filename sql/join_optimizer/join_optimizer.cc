@@ -5423,20 +5423,16 @@ static size_t ComputeSubTreeHeight(const AccessPath *path) {
 
 // Calculates Linear inflation to the estimated
 //
-//   nu:    cardinality estimate
-//   theta: optimism level
-//   eta:   tree depth
-//
 // This function increases cardinality with tree depth and decreases
 // cardinality with optimism level.
-double LinearInflation(double nu, double theta, double eta)
+double LinearInflation(double cardinality, double optimism_level, double tree_depth)
 {
-  double depth_factor = 0.1;
+  double depth_factor = 0.0;
   double optimism_factor = 1.0;
 
   // More tree depth means adjust positive. More optimism means adjust negative.
-  double adjustment = 1.0 + depth_factor * eta - optimism_factor * theta;
-  return nu * adjustment;
+  double adjustment = 1.0 + depth_factor * tree_depth - optimism_factor * optimism_level;
+  return cardinality * adjustment;
 }
 
 bool CostingReceiver::AllowOptimisticHashJoin(NodeMap left, NodeMap right,
@@ -5461,16 +5457,16 @@ bool CostingReceiver::AllowOptimisticHashJoin(NodeMap left, NodeMap right,
     return false;
   }
 
-  double theta   = m_thd->optimism_level;
-  double omega   = EstimateRowWidthForHashJoin(*m_graph, right);
-  double nu      = right_path.num_output_rows();
-  double kappa   = static_cast<double>(m_thd->variables.join_buff_size);
-  double eta     = static_cast<double>(ComputeSubTreeHeight(&right_path));
+  double optimism_level   = m_thd->optimism_level;
+  double row_width        = EstimateRowWidthForHashJoin(*m_graph, right);
+  double cardinality      = right_path.num_output_rows();
+  double join_buff_size   = static_cast<double>(m_thd->variables.join_buff_size);
+  double tree_height      = static_cast<double>(ComputeSubTreeHeight(&right_path));
 
-  double nu_eff  = 0.0;
+  double cardinality_eff  = 0.0;
   switch (m_thd->optimism_func) {
     case OptimismFunc::LINEAR:
-      nu_eff = LinearInflation(nu, theta, eta);
+      cardinality_eff = LinearInflation(cardinality, optimism_level, tree_height);
       break;
     case OptimismFunc::SIGMOID:
       return true;
@@ -5479,9 +5475,9 @@ bool CostingReceiver::AllowOptimisticHashJoin(NodeMap left, NodeMap right,
       break;
   }
 
-  double memNeeded = nu_eff * omega;
+  double memNeeded = cardinality_eff * row_width;
 
-  return (memNeeded <= kappa);
+  return (memNeeded <= join_buff_size);
 }
 
 void CostingReceiver::ProposeOptimisticHashJoin(
