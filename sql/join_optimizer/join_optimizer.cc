@@ -5431,10 +5431,6 @@ double LinearInflation(double cardinality, double optimism_level)
     return std::numeric_limits<double>::infinity();
   }
 
-  if (optimism_level >= 1) {
-    return 0;
-  }
-
   // More tree depth means adjust positive. More optimism means adjust negative.
   double adjustment = (1.0 - optimism_level) / optimism_level;
   return cardinality * adjustment;
@@ -5480,9 +5476,8 @@ bool CostingReceiver::AllowOptimisticHashJoin(NodeMap left, NodeMap right,
       break;
   }
 
-  double memNeeded = cardinality_eff * row_width;
-
-  return (memNeeded <= join_buff_size);
+  double mem_needed = cardinality_eff * row_width;
+  return (mem_needed <= join_buff_size);
 }
 
 void CostingReceiver::ProposeOptimisticHashJoin(
