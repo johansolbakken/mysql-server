@@ -311,6 +311,8 @@ optimizer_func:
               $$ = static_cast<int>(OptimismFunc::SIGMOID);
           else if (strcasecmp($1.str, "EXPONENTIAL") == 0)
               $$ = static_cast<int>(OptimismFunc::EXPONENTIAL);
+          else if (strcasecmp($1.str, "ALWAYS") == 0)
+              $$ = static_cast<int>(OptimismFunc::ALWAYS);
           else
           {
               scanner->syntax_warning(ER_THD(thd, ER_UNKNOWN_OPTIMISM_FUNC));

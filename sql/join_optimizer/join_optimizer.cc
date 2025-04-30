@@ -5471,6 +5471,8 @@ bool CostingReceiver::AllowOptimisticHashJoin(NodeMap left, NodeMap right,
       break;
     case OptimismFunc::SIGMOID:
       return true;
+    case OptimismFunc::ALWAYS:
+      return true;
     default:
       return false;
       break;
