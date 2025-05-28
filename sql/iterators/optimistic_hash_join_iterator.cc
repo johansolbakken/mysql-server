@@ -33,9 +33,11 @@ bool OptimisticHashJoinIterator::Init() {
   return false;
 }
 
+// Return 0 is OK, return 1 is ERROR, return -1 is END OF RECORDS
 int OptimisticHashJoinIterator::Read(){
   if (m_read_iterator == nullptr) {
-    return 0;
+    assert(false && "Should be unreachable");
+    return 1;
   }
 
   return (*m_read_iterator)->Read();
